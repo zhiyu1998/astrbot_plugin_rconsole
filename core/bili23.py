@@ -15,17 +15,7 @@ from bilibili_api.opus import Opus
 from bilibili_api.video import VideoDownloadURLDataDetecter
 
 from .common import delete_boring_characters, remove_files
-
-"""
-哔哩哔哩的头请求
-"""
-BILIBILI_HEADER = {
-    'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 '
-        'Safari/537.36',
-    'referer': 'https://www.bilibili.com',
-}
-
+from ..constants.bili23 import *
 
 async def download_b_file(url, full_file_name, progress_callback):
     """
