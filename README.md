@@ -1,8 +1,16 @@
-# astrbot_plugin_rconsole
+<p align="center">
+  <a href="https://gitee.com/kyrzy0416/rconsole-plugin">
+    <img width="200" src="./images/AstrR.png">
+  </a>
+</p>
+
+<div align="center">
+    <h1>astrbot_plugin_rconsole</h1>
+    专门为朋友们写的AstrBot插件，专注图片视频分享、生活、健康和学习的插件！
+    <img src="https://cdn.z.wiki/autoupload/20240819/Zn2g/github-contribution-grid-snake.svg">
+</div>
 
 > AstrBot_R插件的迁移版本
-
-![](./images/AstrR.png)
 
 专门为朋友们写的AstrBot插件，专注图片视频分享、生活、健康和学习的插件！
 
