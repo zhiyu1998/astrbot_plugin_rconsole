@@ -6,13 +6,9 @@
 
 <div align="center">
     <h1>astrbot_plugin_rconsole</h1>
-    专门为朋友们写的AstrBot插件，专注图片视频分享、生活、健康和学习的插件！
+    专门为朋友们写的AstrBot插件（AstrBot_R插件的迁移版本），专注图片视频分享、生活、健康和学习的插件！
     <img src="https://cdn.z.wiki/autoupload/20240819/Zn2g/github-contribution-grid-snake.svg">
 </div>
-
-> AstrBot_R插件的迁移版本
-
-专门为朋友们写的AstrBot插件，专注图片视频分享、生活、健康和学习的插件！
 
 ## 手动部署
 
