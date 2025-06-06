@@ -1,0 +1,21 @@
+{
+  "BILI_SESSDATA": {
+    "description": "哔哩哔哩_Session",
+    "type": "string",
+    "hint": "通过哔哩哔哩的Cookie获取",
+    "obvious_hint": true
+  },
+  "VIDEO_DURATION_MAXIMUM": {
+    "description": "视频时长上限",
+    "type": "int",
+    "default": 480,
+    "hint": "单位:秒",
+    "obvious_hint": true
+  },
+  "DOUYIN_CK": {
+    "description": "抖音Cookie",
+    "type": "string",
+    "hint": "通过抖音的Cookie获取",
+    "obvious_hint": true
+  }
+}
