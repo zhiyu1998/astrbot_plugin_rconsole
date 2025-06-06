@@ -2,4 +2,4 @@ name: R插件 # 这是你的插件的唯一识别名。
 desc: 专门为朋友们写的AstrBot插件，专注图片视频分享、生活、健康和学习的插件！ # 插件简短描述
 version: v1.0.0 # 插件版本号。格式：v1.1.1 或者 v1.1
 author: RrOrange # 作者
-repo: https://github.com/RrOrange/R插件 # 插件的仓库地址
+repo: https://github.com/zhiyu1998/astrbot_plugin_rconsole
