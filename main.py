@@ -6,6 +6,7 @@ from typing import Any, AsyncGenerator
 
 from .core.bili23 import process_bilibili_url
 from .core.douyin import process_douyin_url
+from .core.xhs import process_xiaohongshu_url
 
 
 @register("R插件", "RrOrange", "专门为朋友们写的AstrBot插件，专注图片视频分享、生活、健康和学习的插件！", "1.0.0")
@@ -16,6 +17,7 @@ class RPlugin(Star):
         self.credential = Credential(sessdata=self.config["BILI_SESSDATA"])
         self.VIDEO_DURATION_MAXIMUM = self.config["VIDEO_DURATION_MAXIMUM"]
         self.DOUYIN_CK = self.config.get("DOUYIN_CK", "")
+        self.XHS_CK = self.config.get("XHS_CK", "")
 
     async def initialize(self):
         """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
@@ -34,6 +36,14 @@ class RPlugin(Star):
         处理抖音链接，业务逻辑已移至 core/douyin.py
         """
         async for result in process_douyin_url(event, self.DOUYIN_CK):
+            yield result
+            
+    @filter.regex(r".*(https?:\/\/)?(?:www\.)?(xhslink\.com|xiaohongshu\.com)\/[A-Za-z\d._?%&+\-=\/#@]*.*")
+    async def xiaohongshu(self, event: AstrMessageEvent):
+        """
+        处理小红书链接，业务逻辑已移至 core/xhs.py
+        """
+        async for result in process_xiaohongshu_url(event, self.XHS_CK):
             yield result
 
     async def terminate(self):

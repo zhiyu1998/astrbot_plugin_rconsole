@@ -9,7 +9,7 @@ from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 
 from ..constants.douyin import DOUYIN_HEADER, DOUYIN_VIDEO_API, DOUYIN_TOUTIAO_API, URL_TYPE_CODE_DICT
-from .common import create_forward_message
+from .common import create_forward_message, send_forward_message
 
 # 尝试导入execjs，但即使导入失败也不影响基本功能
 try:
@@ -213,34 +213,25 @@ async def process_douyin_url(event: AstrMessageEvent, douyin_ck: str = "") -> As
                 
                 # 使用转发消息发送图片集
                 if images:
-                    # 创建Nodes消息
-                    # 首先添加一个介绍Node
-                    nodes = Comp.Nodes([])
-                    nodes.nodes.append(
-                        Comp.Node(
-                            uin=12345,
-                            name=f"{author} 的抖音",
-                            content=[Comp.Plain(f"图集共 {len(images)} 张图片")]
-                        )
-                    )
+                    # 创建消息内容列表
+                    content_list = []
                     
-                    # 然后添加每张图片的Node
+                    # 添加介绍消息
+                    content_list.append([
+                        Comp.Plain(f"抖音 | {title}\n作者: {author}\n\n图集共 {len(images)} 张图片")
+                    ])
+                    
+                    # 添加每张图片
                     for i, image_url in enumerate(images):
                         if image_url is not None:
-                            nodes.nodes.append(
-                                Comp.Node(
-                                    uin=12345,
-                                    name=f"{author} 的抖音",
-                                    content=[
-                                        Comp.Image.fromURL(image_url),
-                                        Comp.Plain(f"\n第 {i+1}/{len(images)} 张")
-                                    ]
-                                )
-                            )
+                            content_list.append([
+                                Comp.Image.fromURL(image_url),
+                                Comp.Plain(f"\n第 {i+1}/{len(images)} 张")
+                            ])
                     
                     # 发送合并转发消息
-                    if nodes.nodes:
-                        yield event.chain_result([nodes])
+                    if content_list:
+                        yield await send_forward_message(event, content_list)
             else:
                 yield event.plain_result("抖音图集解析失败")
             return
@@ -326,35 +317,26 @@ async def process_douyin_url(event: AstrMessageEvent, douyin_ck: str = "") -> As
                     yield event.plain_result("无法获取图片内容")
                     return
                 
-                # 使用转发消息发送图片集
-                # 创建Nodes消息
-                nodes = Comp.Nodes([])
-                nodes.nodes.append(
-                    Comp.Node(
-                        uin=12345,
-                        name=f"{author} 的抖音",
-                        content=[Comp.Plain(f"图集共 {len(images)} 张图片")]
-                    )
-                )
+                # 创建消息内容列表
+                content_list = []
                 
-                # 添加每张图片的Node
+                # 添加介绍消息
+                content_list.append([
+                    Comp.Plain(f"抖音 | {desc}\n作者: {author}\n\n图集共 {len(images)} 张图片")
+                ])
+                
+                # 添加每张图片
                 for i, img in enumerate(images):
                     url_list = img.get('url_list', [])
                     if url_list and url_list[0] is not None:
-                        nodes.nodes.append(
-                            Comp.Node(
-                                uin=12345,
-                                name=f"{author} 的抖音",
-                                content=[
-                                    Comp.Image.fromURL(url_list[0]),
-                                    Comp.Plain(f"\n第 {i+1}/{len(images)} 张")
-                                ]
-                            )
-                        )
+                        content_list.append([
+                            Comp.Image.fromURL(url_list[0]),
+                            Comp.Plain(f"\n第 {i+1}/{len(images)} 张")
+                        ])
                 
                 # 发送合并转发消息
-                if nodes.nodes:
-                    yield event.chain_result([nodes])
+                if content_list:
+                    yield await send_forward_message(event, content_list)
 
     except Exception as e:
         logger.error(f"处理抖音链接失败: {e}")

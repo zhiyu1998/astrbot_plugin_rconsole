@@ -17,5 +17,11 @@
     "type": "string",
     "hint": "通过抖音的Cookie获取",
     "obvious_hint": true
+  },
+  "XHS_CK": {
+    "description": "小红书Cookie",
+    "type": "string",
+    "hint": "通过小红书的Cookie获取",
+    "obvious_hint": true
   }
 }

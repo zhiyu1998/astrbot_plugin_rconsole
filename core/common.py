@@ -1,6 +1,6 @@
 import re
 import os
-from typing import List, Dict, Any, Union, Sequence
+from typing import List, Dict, Any, Union, Sequence, Optional
 
 import astrbot.api.message_components as Comp
 from astrbot.api.event import AstrMessageEvent
@@ -38,16 +38,16 @@ def remove_files(file_paths: List[str]) -> Dict[str, str]:
     return results
 
 def create_forward_message(content_list: List[Union[List[Any], Dict[str, Any]]], 
-                          default_name: str = "机器人", 
-                          default_uin: int = 123456) -> Comp.Nodes:
+                          default_name: Optional[str] = None, 
+                          default_uin: Optional[Union[int, str]] = None) -> Comp.Nodes:
     """
     创建合并转发消息
     
     :param content_list: 消息内容列表，每个元素可以是:
                         1. 列表：包含 Plain, Image 等消息组件
                         2. 字典：包含 'uin', 'name', 'content' 的键值对
-    :param default_name: 默认显示的发送者名称
-    :param default_uin: 默认显示的发送者QQ号
+    :param default_name: 默认显示的发送者名称，如果为None会尝试使用发送者信息
+    :param default_uin: 默认显示的发送者ID，如果为None会尝试使用发送者信息
     :return: Nodes对象，包含所有的Node
     
     使用示例:
@@ -83,22 +83,35 @@ def create_forward_message(content_list: List[Union[List[Any], Dict[str, Any]]],
 
 async def send_forward_message(event: AstrMessageEvent, 
                              content_list: List[Union[List[Any], Dict[str, Any]]],
-                             default_name: str = "机器人", 
-                             default_uin: int = 123456) -> Any:
+                             default_name: Optional[str] = None, 
+                             default_uin: Optional[Union[int, str]] = None) -> Any:
     """
     发送合并转发消息
     
     :param event: AstrMessageEvent实例
     :param content_list: 消息内容列表
-    :param default_name: 默认显示的发送者名称
-    :param default_uin: 默认显示的发送者QQ号
+    :param default_name: 默认显示的发送者名称，如果为None将使用发送者的名称
+    :param default_uin: 默认显示的发送者ID，如果为None将使用发送者的ID
     :return: 消息发送结果
     
     使用示例:
+    >>> # 使用发送者信息
     >>> yield await send_forward_message(event, [
     >>>     [Comp.Plain("第一条消息")],
     >>>     [Comp.Image.fromURL("http://example.com/image.jpg")]
     >>> ])
+    >>> 
+    >>> # 自定义名称
+    >>> yield await send_forward_message(event, [
+    >>>     [Comp.Plain("第一条消息")],
+    >>>     [Comp.Image.fromURL("http://example.com/image.jpg")]
+    >>> ], default_name="自定义名称")
     """
+    # 如果未提供默认值，则使用发送者信息
+    if default_name is None:
+        default_name = event.get_sender_name()
+    if default_uin is None:
+        default_uin = event.get_sender_id()
+        
     nodes = create_forward_message(content_list, default_name, default_uin)
     return event.chain_result([nodes])
