@@ -22,5 +22,6 @@ uv add bilibili-api-python PyExecJS
 - [x] 哔哩哔哩
 - [x] Douyin
 - [ ] XHS
+- [ ] 油管
 
 ## 待完善...
