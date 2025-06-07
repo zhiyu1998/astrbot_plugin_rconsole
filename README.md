@@ -14,12 +14,18 @@
 
 1. 在 AstrBot 的根目录安装以下依赖
 ```
-uv add bilibili-api-python PyExecJS httpx aiohttp
+uv add bilibili-api-python PyExecJS
 ```
 
 2. 将 `astrbot_plugin_rconsole` 放入根目录下 `data/plugins`，例如：
 
 > /home/AstrBot/data/plugins
+
+或者直接克隆
+
+```shell
+git clone https://github.com/zhiyu1998/astrbot_plugin_rconsole.git ./data/plugins/astrbot_plugin_rconsole
+```
 
 3. 运行，填入相关 Cookie 即可进行解析
 
