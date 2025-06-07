@@ -1,10 +1,13 @@
 import os
 import random
 import re
+import time
+import asyncio
 from typing import List, Tuple, Optional, AsyncGenerator
 
 import astrbot.api.message_components as Comp
 import httpx
+import aiohttp
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 
@@ -21,6 +24,17 @@ except ImportError:
     logger.warning("execjs not installed, X-Bogus signature generation will be skipped")
     HAS_EXECJS = False
     import urllib.parse
+
+# 临时目录设置 - 使用标准化的路径格式
+DATA_DIR = os.path.join(os.getcwd(), "data")
+CACHE_DIR = os.path.join(DATA_DIR, "douyin_cache")
+
+# 确保缓存目录存在
+try:
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    logger.info(f"确保抖音缓存目录存在: {CACHE_DIR}")
+except Exception as e:
+    logger.error(f"创建缓存目录失败: {e}")
 
 
 def generate_random_str(randomlength=16):
@@ -169,6 +183,45 @@ async def get_redirect_url(url: str) -> Optional[str]:
         return None
 
 
+async def download_image(url: str, session: Optional[aiohttp.ClientSession] = None) -> Optional[str]:
+    """
+    下载图片到缓存目录
+    
+    :param url: 图片URL
+    :param session: 可选的 aiohttp 会话
+    :return: 本地文件路径或None
+    """
+    try:
+        # 生成唯一文件名
+        filename = f"img_{int(time.time())}_{random.randint(1000, 9999)}.jpg"
+        filepath = os.path.join(CACHE_DIR, filename)
+        
+        if session:
+            async with session.get(url) as response:
+                if response.status != 200:
+                    logger.error(f"下载图片失败，状态码: {response.status}")
+                    return None
+                    
+                with open(filepath, 'wb') as fd:
+                    async for chunk in response.content.iter_chunked(1024):
+                        fd.write(chunk)
+        else:
+            async with aiohttp.ClientSession() as new_session:
+                async with new_session.get(url) as response:
+                    if response.status != 200:
+                        logger.error(f"下载图片失败，状态码: {response.status}")
+                        return None
+                        
+                    with open(filepath, 'wb') as fd:
+                        async for chunk in response.content.iter_chunked(1024):
+                            fd.write(chunk)
+                            
+        return filepath
+    except Exception as e:
+        logger.error(f"下载图片异常: {e}")
+        return None
+
+
 async def process_douyin_url(event: AstrMessageEvent, douyin_ck: str = "") -> AsyncGenerator:
     """
     处理抖音链接
@@ -221,17 +274,53 @@ async def process_douyin_url(event: AstrMessageEvent, douyin_ck: str = "") -> As
                         Comp.Plain(f"抖音 | {title}\n作者: {author}\n\n图集共 {len(images)} 张图片")
                     ])
                     
-                    # 添加每张图片
-                    for i, image_url in enumerate(images):
-                        if image_url is not None:
+                    # 下载图片
+                    downloaded_images = []
+                    try:
+                        async with aiohttp.ClientSession() as session:
+                            download_tasks = []
+                            for image_url in images:
+                                if image_url is not None:
+                                    download_tasks.append(download_image(image_url, session))
+                                    
+                            if download_tasks:
+                                downloaded_images = await asyncio.gather(*download_tasks)
+                    except Exception as e:
+                        logger.error(f"下载图片失败: {e}")
+                    
+                    # 添加每张图片到转发消息
+                    for i, image_path in enumerate(downloaded_images):
+                        if image_path is not None:
                             content_list.append([
-                                Comp.Image.fromURL(image_url),
-                                Comp.Plain(f"\n第 {i+1}/{len(images)} 张")
+                                Comp.Image.fromFileSystem(image_path),
+                                Comp.Plain(f"\n第 {i+1}/{len(downloaded_images)} 张")
                             ])
                     
                     # 发送合并转发消息
                     if content_list:
-                        yield await send_forward_message(event, content_list)
+                        try:
+                            yield await send_forward_message(event, content_list)
+                        except Exception as e:
+                            logger.error(f"发送合并转发消息失败: {e}")
+                            # 失败后单独发送每张图片
+                            yield event.plain_result(f"合并转发失败，单独发送图片...")
+                            for i, image_path in enumerate(downloaded_images):
+                                if image_path is not None:
+                                    try:
+                                        yield event.chain_result([
+                                            Comp.Image.fromFileSystem(image_path),
+                                            Comp.Plain(f"\n第 {i+1}/{len(downloaded_images)} 张")
+                                        ])
+                                    except Exception as e2:
+                                        logger.error(f"发送单张图片失败: {e2}")
+                    
+                    # 清理临时文件
+                    for path in downloaded_images:
+                        if path and os.path.exists(path):
+                            try:
+                                os.remove(path)
+                            except Exception as e:
+                                logger.error(f"删除临时文件失败: {e}")
             else:
                 yield event.plain_result("抖音图集解析失败")
             return
@@ -328,9 +417,9 @@ async def process_douyin_url(event: AstrMessageEvent, douyin_ck: str = "") -> As
                 # 添加每张图片
                 for i, img in enumerate(images):
                     url_list = img.get('url_list', [])
-                    if url_list and url_list[0] is not None:
+                    if url_list and url_list[1] is not None:
                         content_list.append([
-                            Comp.Image.fromURL(url_list[0]),
+                            Comp.Image.fromURL(url_list[1]),
                             Comp.Plain(f"\n第 {i+1}/{len(images)} 张")
                         ])
                 

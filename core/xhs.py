@@ -22,16 +22,13 @@ COMMON_HEADER = {
 }
 
 # 数据目录和缓存目录
-DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+DATA_DIR = os.path.join(os.getcwd(), "data")
 CACHE_DIR = os.path.join(DATA_DIR, "xhs_cache")
-TEMP_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "temp")
 
 # 确保缓存目录存在
 try:
     os.makedirs(CACHE_DIR, exist_ok=True)
-    os.makedirs(TEMP_DIR, exist_ok=True)
     logger.info(f"确保小红书缓存目录存在: {CACHE_DIR}")
-    logger.info(f"确保临时目录存在: {TEMP_DIR}")
 except Exception as e:
     logger.error(f"创建目录失败: {e}")
 
@@ -59,17 +56,17 @@ async def download_img(url: str, path: str, session: Optional[aiohttp.ClientSess
 
 async def download_video(url: str) -> str:
     """
-    下载视频到临时路径
+    下载视频到缓存路径
     
     :param url: 视频链接
     :return: 保存的文件路径
     """
-    # 确保临时目录存在
-    os.makedirs(TEMP_DIR, exist_ok=True)
+    # 确保缓存目录存在
+    os.makedirs(CACHE_DIR, exist_ok=True)
     
     # 生成唯一文件名
     filename = f"xhs_video_{int(time.time())}_{random.randint(1000, 9999)}.mp4"
-    path = os.path.join(TEMP_DIR, filename)
+    path = os.path.join(CACHE_DIR, filename)
     
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
@@ -351,7 +348,7 @@ async def process_xiaohongshu_url(event: AstrMessageEvent, xhs_ck: str) -> Async
             return
         
         # 创建临时目录
-        os.makedirs(TEMP_DIR, exist_ok=True)
+        os.makedirs(CACHE_DIR, exist_ok=True)
         
         # 下载图片
         image_paths = []
@@ -361,7 +358,7 @@ async def process_xiaohongshu_url(event: AstrMessageEvent, xhs_ck: str) -> Async
                 image_url = item.get('url', '')
                 if not image_url:
                     continue
-                path = os.path.join(TEMP_DIR, f"xhs_{xhs_id}_{index}.jpg")
+                path = os.path.join(CACHE_DIR, f"xhs_{xhs_id}_{index}.jpg")
                 download_tasks.append(asyncio.create_task(
                     download_img(image_url, path, session=session)))
             
