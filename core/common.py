@@ -31,7 +31,7 @@ TEMP_DIR = os.path.join(DATA_DIR, "temp")
 # ---------------------------------------------------------------- 下载并发
 
 # 任务级并发：同时最多几个下载在跑（相当于 R 插件的 queueConcurrency）
-_DOWNLOAD_CONCURRENCY = 4
+_DOWNLOAD_CONCURRENCY = 2
 # 单文件分段数：同一个文件切成几段并发拉（相当于 videoDownloadConcurrency）
 _DOWNLOAD_THREADS = 4
 # 小于这个大小就不折腾分段了
@@ -39,7 +39,7 @@ _DOWNLOAD_SEGMENT_MIN_MB = 5
 _download_sem: Optional[asyncio.Semaphore] = None
 
 
-def set_download_limits(concurrency: int = 4, threads: int = 4) -> None:
+def set_download_limits(concurrency: int = 2, threads: int = 4) -> None:
     """配置下载并发：concurrency=队列长度（同时几个任务），threads=单文件分段数"""
     global _DOWNLOAD_CONCURRENCY, _DOWNLOAD_THREADS, _download_sem
     _DOWNLOAD_CONCURRENCY = max(1, int(concurrency or 1))

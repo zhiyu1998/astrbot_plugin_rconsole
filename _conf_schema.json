@@ -42,8 +42,8 @@
   "DOWNLOAD_CONCURRENCY": {
     "description": "【全局】同时下载任务数（队列）",
     "type": "int",
-    "default": 4,
-    "hint": "同时最多几个下载任务在跑，相当于队列长度。服务器弱就调到 1~2，靠前的任务会排队等待",
+    "default": 2,
+    "hint": "同时最多几个下载任务在跑，相当于队列长度。服务器弱就调到 1，靠后的任务会排队等待",
     "obvious_hint": true
   },
   "DOWNLOAD_THREADS": {

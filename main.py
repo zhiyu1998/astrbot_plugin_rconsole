@@ -117,7 +117,7 @@ class RPlugin(Star):
         self._apply_file_service_mode(quiet=True)
 
         # 下载并发：concurrency = 同时几个任务（队列），threads = 单文件分段数（多线程）
-        self.download_concurrency = int(self._cfg("DOWNLOAD_CONCURRENCY", 4) or 4)
+        self.download_concurrency = int(self._cfg("DOWNLOAD_CONCURRENCY", 2) or 2)
         self.download_threads = int(self._cfg("DOWNLOAD_THREADS", 4) or 0)
         set_download_limits(self.download_concurrency, self.download_threads)
 

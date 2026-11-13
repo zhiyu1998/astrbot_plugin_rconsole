@@ -10,24 +10,88 @@
     <img src="https://cdn.z.wiki/autoupload/20240819/Zn2g/github-contribution-grid-snake.svg">
 </div>
 
-## 手动部署
+## 安装部署
 
-1. 在 AstrBot 的根目录安装以下依赖
+### 环境要求
+
+| 项目 | 要求 |
+| --- | --- |
+| AstrBot | v4.5.0 及以上 |
+| Python | 3.10+（用 AstrBot 自带的虚拟环境即可） |
+| ffmpeg | 可选但建议安装，AcFun 分片合并、部分视频合并需要 |
+
+### 方式一：面板安装（推荐）
+
+AstrBot 面板 → **插件** → **安装插件**，填入仓库地址：
+
 ```
-uv add bilibili-api-python PyExecJS
+https://github.com/zhiyu1998/astrbot_plugin_rconsole
 ```
 
-2. 将 `astrbot_plugin_rconsole` 放入根目录下 `data/plugins`，例如：
+安装完成后重载插件（或重启 AstrBot）。面板不支持从仓库安装时，用下面的方式二。
 
-> /home/AstrBot/data/plugins
+### 方式二：手动安装
 
-或者直接克隆
+1. 把插件放进 AstrBot 的 `data/plugins`：
 
 ```shell
-git clone https://github.com/zhiyu1998/astrbot_plugin_rconsole.git ./data/plugins/astrbot_plugin_rconsole
+cd /path/to/AstrBot
+git clone https://github.com/zhiyu1998/astrbot_plugin_rconsole.git data/plugins/astrbot_plugin_rconsole
 ```
 
-3. 运行，填入相关 Cookie 即可进行解析
+2. 安装依赖（在 **AstrBot 根目录** 执行）：
+
+```shell
+# AstrBot 默认用 uv
+uv pip install -r data/plugins/astrbot_plugin_rconsole/requirements.txt
+```
+
+```shell
+# 没有 uv 的话直接 pip
+pip install httpx aiohttp aiofiles bilibili-api-python PyExecJS
+```
+
+3. 重启 AstrBot（或面板里重载插件）。
+
+### 安装 ffmpeg（建议）
+
+```shell
+# Debian / Ubuntu
+apt install -y ffmpeg
+
+# CentOS / RHEL
+yum install -y ffmpeg
+
+# Windows
+# 下载 https://www.gyan.dev/ffmpeg/builds/ 的 release 包，解压后把 bin 目录加进 PATH
+```
+
+### 配置 Cookie
+
+打开面板 → **插件** → **R插件**，按需填写（不填也能跑一部分平台，但成功率会低）：
+
+| 配置项 | 是否必需 | 说明 |
+| --- | --- | --- |
+| `XHH_CK` | **必填** | 小黑盒没 Cookie 直接无法解析 |
+| `XHS_CK` | **强烈建议** | 小红书网页版必须带 Cookie（需要 `a1` 和 `web_session`） |
+| `BILI_SESSDATA` | **建议** | B 站 720P 以上画质必需，失效会退回 360P/480P |
+| `DOUYIN_CK` | 可选 | 填了成功率和清晰度更高 |
+| `WEIBO_CK` | 可选 | 提高接口成功率、能看评论 |
+
+Cookie 获取：浏览器登录对应网站 → `F12` → **Network** → 随便点一个请求 → **Request Headers** → 复制整段 `Cookie` 值。
+
+其余配置项（画质、时长上限、合并转发、下载并发等）见下方「配置项」。
+
+### 常见问题
+
+| 现象 | 原因与处理 |
+| --- | --- |
+| 小红书提示「页面里没有找到笔记数据」 | 要用 App / 网页「分享」出来的、带 `xsec_token` 的链接；手抄的裸链接 `…/explore/<id>` 无效 |
+| B 站只能解析到 360P / 480P | `BILI_SESSDATA` 失效（日志会打「账号未登录 -101」），重新获取；4K/8K/HDR/杜比还需要大会员 |
+| 视频提示 `ENOENT: no such file or directory` | NapCat 在容器 / 另一台机器上读不到宿主机路径。插件默认已改成 base64 发送；视频较多时建议在 AstrBot 配置里设置 `callback_api_base`，改走文件服务 |
+| 小黑盒提示需要验证码 | 优先用 App 分享链接，并更新 `XHH_CK` |
+| AcFun 解析失败 | 大概率没装 `ffmpeg`，见上面「安装 ffmpeg」 |
+| 图片/视频发得很慢 | 调小 `DOWNLOAD_CONCURRENCY`（同时任务数）与 `DOWNLOAD_THREADS`（单文件分段数） |
 
 ## 功能列表
 
@@ -60,7 +124,7 @@ git clone https://github.com/zhiyu1998/astrbot_plugin_rconsole.git ./data/plugin
 | `IMAGE_USE_FORWARD` | `true` | 多图走合并转发（一张图一个节点），不会刷屏 |
 | `IMAGE_BATCH_THRESHOLD` | `0` | 每条转发最多几张图，`0` 表示全部塞进一条 |
 | `MSG_ELEMENT_LIMIT` | `50` | 单条转发消息元素上限（图文混排，如小黑盒） |
-| `DOWNLOAD_CONCURRENCY` | `4` | 同时下载任务数（队列长度），服务器弱可调 1~2 |
+| `DOWNLOAD_CONCURRENCY` | `2` | 同时下载任务数（队列长度），服务器弱可调 1 |
 | `DOWNLOAD_THREADS` | `4` | 单文件 Range 分段并发数（>5MB 生效），0/1 = 不分段 |
 | `DISABLED_PLATFORMS` | `[]` | 禁用的平台：`douyin` / `bilibili` / `kuaishou` / `weibo` / `acfun` / `xhs` / `miyoushe` / `xiaoheihe` / `weishi` |
 | `GENERAL_PARSE_APIS` | 见插件默认值 | 通用第三方解析接口，每行一个，`{}` 为原始链接占位 |
