@@ -57,7 +57,7 @@ _CODEC_ALIAS = {
     PLUGIN_NAME,
     "RrOrange",
     "R插件迁移版：抖音/B站/快手/微博/AcFun/小红书/米游社/小黑盒/微视 链接解析",
-    "1.3.0",
+    "1.2.1",
 )
 class RPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
