@@ -2,6 +2,7 @@ import asyncio
 import os
 import platform
 import re
+import shutil
 import subprocess
 from urllib.parse import urlparse, parse_qs
 
@@ -138,13 +139,168 @@ def extra_bili_info(video_info):
 
 
 def _cleanup_bili_cache(download_path: str, merged: str) -> None:
-    """删掉合并产物与空目录，避免 data/bilibili_cache 越攒越大"""
+    """删掉合并产物与空目录，避免 data/bilibili_cache 越攒越大（保留给旧调用方）"""
     release_video(merged)
+
+
+# ==================== 画质 / 编码 / BBDown ====================
+
+# 画质选项：label 直接存进配置，值是 B 站 qn（None = 不指定，取最高可用）
+AUTO_RESOLUTION = "自动（最高可用）"
+BILI_RESOLUTION_MAP = {
+    "8K 超高清": 127,
+    "杜比视界": 126,
+    "HDR 真彩": 125,
+    "4K 超清": 120,
+    "1080P60 高帧率": 116,
+    "1080P+ 高码率": 112,
+    "1080P 高清": 80,
+    "720P60 高帧率": 74,
+    "720P 高清": 64,
+    "480P 清晰": 32,
+    "360P 流畅": 16,
+    AUTO_RESOLUTION: None,
+}
+# 从高到低，BBDown 的 -q 需要「该画质及以下」的优先级列表
+BILI_RESOLUTION_ORDER = [
+    "8K 超高清", "杜比视界", "HDR 真彩", "4K 超清", "1080P60 高帧率",
+    "1080P+ 高码率", "1080P 高清", "720P60 高帧率", "720P 高清", "480P 清晰", "360P 流畅",
+]
+VIDEO_CODEC_PRIORITY = {
+    "auto": "hevc,av1,avc",
+    "av1": "av1,hevc,avc",
+    "hevc": "hevc,av1,avc",
+    "avc": "avc,hevc,av1",
+}
+CODEC_ID_MAP = {"avc": 7, "hevc": 12, "av1": 13}
+BILI_CDN_MAP = {
+    "不使用": "",
+    "腾讯CDN": "upos-sz-mirrorcos.bilivideo.com",
+    "百度CDN": "upos-sz-mirrorbd.bilivideo.com",
+    "华为CDN": "upos-sz-mirrorhw.bilivideo.com",
+    "阿卡迈（海外）": "upos-sz-mirrorakamai.bilivideo.com",
+    "HK-CDN": "upos-sz-mirroraliov.bilivideo.com",
+    "08ccdn": "upos-sz-mirror08c.bilivideo.com",
+}
+
+
+def _resolution_priority(label: str) -> str:
+    """BBDown -q：从选中画质往下全部列出来，作为优先级"""
+    if label in BILI_RESOLUTION_ORDER:
+        return ", ".join(BILI_RESOLUTION_ORDER[BILI_RESOLUTION_ORDER.index(label):])
+    return ", ".join(BILI_RESOLUTION_ORDER)
+
+
+def _pick_streams(play_data: dict, resolution_label: str, video_codec: str):
+    """
+    自己从 playurl 的 dash 里挑流，实现画质选择。
+
+    bilibili_api 的 get_download_url 固定按 qn=127 请求（返回全部分P画质），
+    但 VideoDownloadURLDataDetecter.detect_best_streams() 永远选最高，
+    所以要按配置的 qn 自己挑：先精确匹配，没有就取不高于目标的最高画质。
+    """
+    dash = (play_data or {}).get("dash") or {}
+    videos = [s for s in (dash.get("video") or []) if s.get("baseUrl") or s.get("base_url")]
+    audios = [s for s in (dash.get("audio") or []) if s.get("baseUrl") or s.get("base_url")]
+    if not videos:
+        return None, None
+
+    target = BILI_RESOLUTION_MAP.get(resolution_label)
+    pool = videos
+    if target:
+        exact = [s for s in videos if s.get("id") == target]
+        if exact:
+            pool = exact
+        else:
+            lower = [s for s in videos if isinstance(s.get("id"), int) and s["id"] <= target]
+            if lower:
+                best_id = max(s["id"] for s in lower)
+                pool = [s for s in lower if s["id"] == best_id]
+
+    codec_id = CODEC_ID_MAP.get(video_codec)
+    if codec_id:
+        same_codec = [s for s in pool if s.get("codecid") == codec_id]
+        if same_codec:
+            pool = same_codec
+
+    video = max(pool, key=lambda s: s.get("bandwidth") or 0)
+    audio = max(audios, key=lambda s: s.get("bandwidth") or 0) if audios else None
+    logger.info(
+        f"[R插件][B站] 选中画质 qn={video.get('id')} codec={video.get('codecid')} "
+        f"带宽={video.get('bandwidth')}（目标={resolution_label}）"
+    )
+    v_url = video.get("baseUrl") or video.get("base_url")
+    a_url = (audio.get("baseUrl") or audio.get("base_url")) if audio else None
+    return v_url, a_url
+
+
+def _resolve_bbdown(configured: str) -> str:
+    """找 BBDown 可执行文件，配置项优先，其次 PATH"""
+    if configured and os.path.isfile(configured) and os.access(configured, os.X_OK):
+        return configured
+    found = shutil.which(configured or "BBDown") or shutil.which("BBDown")
+    return found or ""
+
+
+async def run_bbdown(
+    bbdown_bin: str,
+    url: str,
+    page_num: int,
+    work_dir: str,
+    bvid: str,
+    *,
+    resolution: str,
+    video_codec: str,
+    sessdata: str = "",
+    cdn: str = "",
+    timeout: float = 900.0,
+) -> str:
+    """调用 BBDown 下载，返回生成的 mp4 路径"""
+    args = [
+        bbdown_bin, url,
+        "-e", VIDEO_CODEC_PRIORITY.get(video_codec, "hevc,av1,avc"),
+        "-q", _resolution_priority(resolution),
+        "--work-dir", work_dir,
+        "-p", str(max(1, page_num)),
+        "-F", bvid,
+        "--skip-subtitle", "--skip-cover",
+    ]
+    if sessdata:
+        args += ["-c", f"SESSDATA={sessdata}"]
+    upos = BILI_CDN_MAP.get(cdn) or ""
+    if upos:
+        args += ["--upos-host", upos]
+
+    logger.info("[R插件][BBDown] " + " ".join(args))
+    proc = await asyncio.create_subprocess_exec(
+        *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
+    )
     try:
-        if os.path.isdir(download_path) and not os.listdir(download_path):
-            os.rmdir(download_path)
-    except OSError:
-        pass
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        proc.kill()
+        raise RuntimeError(f"BBDown 超时（{int(timeout)} 秒）")
+
+    output = (stdout or b"").decode("utf-8", "ignore")
+    if proc.returncode != 0:
+        tail = output.strip().splitlines()[-6:]
+        raise RuntimeError(" / ".join(tail) or f"BBDown 退出码 {proc.returncode}")
+
+    expected = os.path.join(work_dir, f"{bvid}.mp4")
+    if os.path.exists(expected):
+        return expected
+
+    # BBDown 有时会建子目录，兜底找最新的 mp4
+    candidates = []
+    for root, _dirs, files in os.walk(work_dir):
+        for name in files:
+            if name.lower().endswith(".mp4"):
+                path = os.path.join(root, name)
+                candidates.append((os.path.getmtime(path), path))
+    if candidates:
+        candidates.sort()
+        return candidates[-1][1]
+    raise RuntimeError("BBDown 执行完成但没找到 mp4 文件")
 
 
 async def process_bilibili_url(
@@ -157,6 +313,11 @@ async def process_bilibili_url(
     display_intro: bool = True,
     display_online: bool = True,
     intro_len_limit: int = 50,
+    resolution: str = AUTO_RESOLUTION,
+    video_codec: str = "auto",
+    use_bbdown: bool = False,
+    bbdown_path: str = "BBDown",
+    cdn: str = "不使用",
 ):
     """
         核心代码：处理B站链接
@@ -385,30 +546,70 @@ async def process_bilibili_url(
         # 超时长不下载：省带宽，也避免把大文件塞进消息通道
         return
 
-    # 获取下载链接
-    download_url_data = await v.get_download_url(page_index=page_num)
-    detecter = VideoDownloadURLDataDetecter(download_url_data)
-    streams = detecter.detect_best_streams()
-    video_url, audio_url = streams[0].url, streams[1].url
-    # 下载视频和音频
-    download_path = os.getcwd() + "/data/bilibili_cache/" + video_id
-    os.makedirs(download_path, exist_ok=True)
-    merged = f"{download_path}.mp4"
-    try:
-        await asyncio.gather(
-            download_b_file(video_url, f"{download_path}-video.m4s", logger.debug),
-            download_b_file(audio_url, f"{download_path}-audio.m4s", logger.debug))
-        await merge_file_to_mp4(f"{download_path}-video.m4s", f"{download_path}-audio.m4s", merged)
-    except Exception as exc:
-        logger.error(f"[R插件][B站] 下载或合并失败: {exc}")
-        yield event.plain_result(f"B站视频下载失败：{exc}\n原视频：https://www.bilibili.com/video/{video_id}")
-        return
-    finally:
-        remove_res = remove_files([f"{download_path}-video.m4s", f"{download_path}-audio.m4s"])
-        logger.info(remove_res)
+    # ==================== 下载：BBDown 优先，其次原生 ====================
+    download_root = os.path.join(os.getcwd(), "data", "bilibili_cache")
+    os.makedirs(download_root, exist_ok=True)
+    merged = os.path.join(download_root, f"{video_id}.mp4")
+    sessdata = getattr(credential, "sessdata", "") or ""
+    source = ""
+
+    if use_bbdown:
+        bbdown_bin = _resolve_bbdown(bbdown_path)
+        if not bbdown_bin:
+            yield event.plain_result(
+                "开启 BBDown 但没找到可执行文件，已回退默认下载方式（可在配置 BBDOWN_PATH 里指定绝对路径）"
+            )
+        else:
+            try:
+                merged = await run_bbdown(
+                    bbdown_bin,
+                    f"https://www.bilibili.com/video/{video_id}",
+                    page_num + 1,
+                    download_root,
+                    video_id,
+                    resolution=resolution,
+                    video_codec=video_codec,
+                    sessdata=sessdata,
+                    cdn=cdn,
+                )
+                source = "BBDown"
+            except Exception as exc:  # noqa: BLE001
+                logger.error(f"[R插件][B站] BBDown 下载失败: {exc}")
+                yield event.plain_result(f"BBDown 下载失败，回退默认下载方式：{exc}")
+
+    if not source:
+        try:
+            download_url_data = await v.get_download_url(page_index=page_num)
+            video_url, audio_url = _pick_streams(download_url_data, resolution, video_codec)
+            if not video_url:
+                streams = VideoDownloadURLDataDetecter(download_url_data).detect_best_streams()
+                video_url = streams[0].url
+                audio_url = streams[1].url if len(streams) > 1 else None
+        except Exception as exc:  # noqa: BLE001
+            yield event.plain_result(f"B站获取下载地址失败：{exc}")
+            return
+
+        tmp_video = os.path.join(download_root, f"{video_id}-video.m4s")
+        tmp_audio = os.path.join(download_root, f"{video_id}-audio.m4s")
+        try:
+            if audio_url:
+                await asyncio.gather(
+                    download_b_file(video_url, tmp_video, logger.debug),
+                    download_b_file(audio_url, tmp_audio, logger.debug),
+                )
+                await merge_file_to_mp4(tmp_video, tmp_audio, merged)
+            else:
+                await download_b_file(video_url, merged, logger.debug)
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"[R插件][B站] 下载或合并失败: {exc}")
+            yield event.plain_result(f"B站视频下载失败：{exc}\n原视频：https://www.bilibili.com/video/{video_id}")
+            return
+        finally:
+            remove_files([tmp_video, tmp_audio])
+        source = "原生"
 
     # 发送：NapCat 在容器里看不到宿主机路径，file:// 会 ENOENT，这里转 base64
-    logger.info(merged)
+    logger.info(f"[R插件][B站] 下载方式：{source}，文件：{merged}")
     components = video_components(merged, f"{video_id}.mp4", video_size_limit_mb)
     if components:
         yield event.chain_result(components)
@@ -417,7 +618,7 @@ async def process_bilibili_url(
             f"视频已下载但无法发送：可能超过大小上限 {video_size_limit_mb}MB，或读取失败。\n"
             f"原视频：https://www.bilibili.com/video/{video_id}"
         )
-    _cleanup_bili_cache(download_path, merged)
+    release_video(merged)
 
     # AI 总结
     if credential:

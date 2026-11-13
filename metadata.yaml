@@ -1,7 +1,7 @@
 name: astrbot_plugin_rconsole
 display_name: R插件
 desc: R插件迁移版，抖音/B站/快手/微博/AcFun/小红书/米游社/小黑盒/微视 链接解析
-version: v1.2.0
+version: v1.3.0
 author: RrOrange
 repo: https://github.com/zhiyu1998/astrbot_plugin_rconsole
 astrbot_version: ">=4.5.0,<5"

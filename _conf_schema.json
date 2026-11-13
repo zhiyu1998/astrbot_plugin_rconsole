@@ -95,6 +95,54 @@
     "default": true,
     "hint": "关闭后少发一次接口请求"
   },
+  "BILI_RESOLUTION": {
+    "description": "【哔哩哔哩】最高画质",
+    "type": "string",
+    "default": "自动（最高可用）",
+    "options": [
+      "自动（最高可用）",
+      "8K 超高清",
+      "杜比视界",
+      "HDR 真彩",
+      "4K 超清",
+      "1080P60 高帧率",
+      "1080P+ 高码率",
+      "1080P 高清",
+      "720P60 高帧率",
+      "720P 高清",
+      "480P 清晰",
+      "360P 流畅"
+    ],
+    "hint": "原生下载会按这个 qn 挑流；BBDown 会把它当作画质优先级起点。高画质（4K/8K/HDR/杜比）需要 BILI_SESSDATA 且账号有大会员",
+    "obvious_hint": true
+  },
+  "VIDEO_CODEC": {
+    "description": "【哔哩哔哩】视频编码偏好",
+    "type": "string",
+    "default": "自动（推荐）",
+    "options": ["自动（推荐）", "HEVC/H.265", "AV1", "AVC/H.264"],
+    "hint": "AV1 体积最小但部分播放器不支持；AVC 兼容性最好；自动 = HEVC > AV1 > AVC"
+  },
+  "BILI_USE_BBDOWN": {
+    "description": "【哔哩哔哩】使用 BBDown 下载",
+    "type": "bool",
+    "default": false,
+    "hint": "开启后优先用 BBDown 下载（需要服务器上有该可执行文件），失败会自动回退原生下载",
+    "obvious_hint": true
+  },
+  "BBDOWN_PATH": {
+    "description": "【哔哩哔哩】BBDown 可执行文件路径",
+    "type": "string",
+    "default": "BBDown",
+    "hint": "默认从 PATH 里找；也可以填绝对路径，例如 /usr/local/bin/BBDown"
+  },
+  "BILI_CDN": {
+    "description": "【哔哩哔哩】BBDown 强制 CDN",
+    "type": "string",
+    "default": "不使用",
+    "options": ["不使用", "腾讯CDN", "百度CDN", "华为CDN", "阿卡迈（海外）", "HK-CDN", "08ccdn"],
+    "hint": "仅 BBDown 生效（--upos-host）；下载慢时可以换一个试试"
+  },
 
   "DOUYIN_CK": {
     "description": "【抖音】Cookie",

@@ -40,12 +40,24 @@ PLATFORM_ALIASES = {
     "weishi": "微视",
 }
 
+# 面板里显示的是中文标签，代码里用 auto/hevc/av1/avc（兼容直接填英文）
+_CODEC_ALIAS = {
+    "自动（推荐）": "auto",
+    "HEVC/H.265": "hevc",
+    "AV1": "av1",
+    "AVC/H.264": "avc",
+    "auto": "auto",
+    "hevc": "hevc",
+    "av1": "av1",
+    "avc": "avc",
+}
+
 
 @register(
     PLUGIN_NAME,
     "RrOrange",
     "R插件迁移版：抖音/B站/快手/微博/AcFun/小红书/米游社/小黑盒/微视 链接解析",
-    "1.2.0",
+    "1.3.0",
 )
 class RPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -73,6 +85,13 @@ class RPlugin(Star):
         self.bili_display_intro = bool(self._cfg("BILI_DISPLAY_INTRO", True))
         self.bili_display_online = bool(self._cfg("BILI_DISPLAY_ONLINE", True))
         self.bili_intro_len_limit = int(self._cfg("BILI_INTRO_LEN_LIMIT", 50) or 0)
+
+        # 哔哩哔哩画质 / 编码 / 下载方式
+        self.bili_resolution = str(self._cfg("BILI_RESOLUTION", "自动（最高可用）") or "自动（最高可用）")
+        self.video_codec = _CODEC_ALIAS.get(str(self._cfg("VIDEO_CODEC", "自动（推荐）")), "auto")
+        self.bili_use_bbdown = bool(self._cfg("BILI_USE_BBDOWN", False))
+        self.bbdown_path = str(self._cfg("BBDOWN_PATH", "BBDown") or "BBDown")
+        self.bili_cdn = str(self._cfg("BILI_CDN", "不使用") or "不使用")
 
         # 抖音
         self.douyin_enable_ssr = bool(self._cfg("DOUYIN_ENABLE_SSR", True))
@@ -183,6 +202,11 @@ class RPlugin(Star):
             display_intro=self.bili_display_intro,
             display_online=self.bili_display_online,
             intro_len_limit=self.bili_intro_len_limit,
+            resolution=self.bili_resolution,
+            video_codec=self.video_codec,
+            use_bbdown=self.bili_use_bbdown,
+            bbdown_path=self.bbdown_path,
+            cdn=self.bili_cdn,
         ):
             yield result
 

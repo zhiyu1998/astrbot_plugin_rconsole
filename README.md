@@ -74,6 +74,11 @@ git clone https://github.com/zhiyu1998/astrbot_plugin_rconsole.git ./data/plugin
 | 哔哩哔哩 | `BILI_DISPLAY_INTRO` | `true` | 是否显示简介 |
 | 哔哩哔哩 | `BILI_INTRO_LEN_LIMIT` | `50` | 简介截断长度，`0` 或 `-1` 表示不限制 |
 | 哔哩哔哩 | `BILI_DISPLAY_ONLINE` | `true` | 是否显示在线人数 |
+| 哔哩哔哩 | `BILI_RESOLUTION` | `自动（最高可用）` | 最高画质（8K / 杜比 / HDR / 4K / 1080P+ / 1080P / 720P / 480P / 360P） |
+| 哔哩哔哩 | `VIDEO_CODEC` | `自动（推荐）` | 编码偏好：自动 / HEVC / AV1 / AVC |
+| 哔哩哔哩 | `BILI_USE_BBDOWN` | `false` | 用 BBDown 接管下载，失败自动回退原生 |
+| 哔哩哔哩 | `BBDOWN_PATH` | `BBDown` | BBDown 可执行文件路径（默认从 PATH 找） |
+| 哔哩哔哩 | `BILI_CDN` | `不使用` | BBDown 强制 CDN（`--upos-host`） |
 | 抖音 | `DOUYIN_CK` | 空 | 抖音 Cookie，留空也能解析（成功率略低） |
 | 抖音 | `DOUYIN_DURATION` | `0` | 独立时长上限（秒），`0` 表示沿用全局 |
 | 抖音 | `DOUYIN_DISPLAY_COVER` | `true` | 是否显示封面 |
