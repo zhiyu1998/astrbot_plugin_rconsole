@@ -1,50 +1,297 @@
-from astrbot.api import AstrBotConfig
-from astrbot.api.event import filter, AstrMessageEvent
-from astrbot.api.star import Context, Star, register
-from bilibili_api import Credential
+"""
+R插件（AstrBot 迁移版）入口
+
+迁移自 Yunzai 版 rconsole-plugin 的 apps/tools.js，第一版只保留解析类功能：
+抖音、哔哩哔哩、快手、微博、AcFun、小红书、米游社、小黑盒、微视。
+
+点歌（网易云 / 酷狗 / QQ音乐）、油管、X、Instagram、Telegram、贴吧、最右、
+视频号、链接总结这些分支没有迁移。
+"""
+
+import re
 from typing import Any, AsyncGenerator
 
+from astrbot.api import AstrBotConfig, logger
+from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.star import Context, Star, register
+from bilibili_api import Credential
+
+from .core.acfun import process_acfun_url
 from .core.bili23 import process_bilibili_url
+from .core.common import set_file_service
 from .core.douyin import process_douyin_url
+from .core.general import process_general_url
+from .core.miyoushe import process_miyoushe_url
+from .core.weibo import process_weibo_url
+from .core.weishi import process_weishi_url
 from .core.xhs import process_xiaohongshu_url
+from .core.xiaoheihe import process_xiaoheihe_url
+
+PLUGIN_NAME = "astrbot_plugin_rconsole"
+PLATFORM_ALIASES = {
+    "douyin": "抖音",
+    "bilibili": "哔哩哔哩",
+    "kuaishou": "快手",
+    "weibo": "微博",
+    "acfun": "AcFun",
+    "xhs": "小红书",
+    "miyoushe": "米游社",
+    "xiaoheihe": "小黑盒",
+    "weishi": "微视",
+}
 
 
-@register("R插件", "RrOrange", "专门为朋友们写的AstrBot插件，专注图片视频分享、生活、健康和学习的插件！", "1.0.0")
+@register(
+    PLUGIN_NAME,
+    "RrOrange",
+    "R插件迁移版：抖音/B站/快手/微博/AcFun/小红书/米游社/小黑盒/微视 链接解析",
+    "1.2.0",
+)
 class RPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.config = config
-        self.credential = Credential(sessdata=self.config["BILI_SESSDATA"])
-        self.VIDEO_DURATION_MAXIMUM = self.config["VIDEO_DURATION_MAXIMUM"]
-        self.DOUYIN_CK = self.config.get("DOUYIN_CK", "")
-        self.XHS_CK = self.config.get("XHS_CK", "")
+
+        self.credential = Credential(sessdata=str(self._cfg("BILI_SESSDATA", "")))
+        self.video_duration_maximum = int(self._cfg("VIDEO_DURATION_MAXIMUM", 480) or 480)
+        self.video_size_limit_mb = int(self._cfg("VIDEO_SIZE_LIMIT_MB", 30) or 30)
+        # 0/空 → 用默认 30MB：超限只发文字和原链接，避免把几十 MB 的视频塞进消息通道
+        if self.video_size_limit_mb <= 0:
+            self.video_size_limit_mb = 30
+        self.image_batch_threshold = int(self._cfg("IMAGE_BATCH_THRESHOLD", 0) or 0)
+        self.image_use_forward = bool(self._cfg("IMAGE_USE_FORWARD", True))
+        self.msg_element_limit = int(self._cfg("MSG_ELEMENT_LIMIT", 50) or 50)
+        self.identify_prefix = str(self._cfg("IDENTIFY_PREFIX", "识别：") or "识别：")
+
+        # 平台独立时长上限：0 / 未填 → 沿用全局 VIDEO_DURATION_MAXIMUM
+        self.bili_duration = int(self._cfg("BILI_DURATION", 0) or 0) or self.video_duration_maximum
+        self.douyin_duration = int(self._cfg("DOUYIN_DURATION", 0) or 0) or self.video_duration_maximum
+
+        # 哔哩哔哩展示开关
+        self.bili_display_cover = bool(self._cfg("BILI_DISPLAY_COVER", True))
+        self.bili_display_info = bool(self._cfg("BILI_DISPLAY_INFO", True))
+        self.bili_display_intro = bool(self._cfg("BILI_DISPLAY_INTRO", True))
+        self.bili_display_online = bool(self._cfg("BILI_DISPLAY_ONLINE", True))
+        self.bili_intro_len_limit = int(self._cfg("BILI_INTRO_LEN_LIMIT", 50) or 0)
+
+        # 抖音
+        self.douyin_enable_ssr = bool(self._cfg("DOUYIN_ENABLE_SSR", True))
+
+        # 小红书折叠长度（0 = 不折叠）
+        self.xhs_desc_len_limit = int(self._cfg("XHS_DESC_LEN_LIMIT", 78) or 0)
+
+        # 小黑盒
+        self.xhh_comment_limit = int(self._cfg("XHH_COMMENT_LIMIT", 50) or 50)
+
+        self.douyin_ck = str(self._cfg("DOUYIN_CK", ""))
+        self.xhs_ck = str(self._cfg("XHS_CK", ""))
+        self.weibo_ck = str(self._cfg("WEIBO_CK", ""))
+        self.xhh_ck = str(self._cfg("XHH_CK", ""))
+
+        self.douyin_display_cover = bool(self._cfg("DOUYIN_DISPLAY_COVER", True))
+        self.weibo_comments = bool(self._cfg("WEIBO_COMMENTS", True))
+        self.general_parse_apis = self._list_cfg("GENERAL_PARSE_APIS", [])
+
+        # 视频发送方式：配了 callback_api_base 说明有文件服务，本地文件能转成 URL；
+        # 否则 NapCat 在容器里看不到宿主机路径，只能走 base64
+        self.file_service_base = ""
+        self._apply_file_service_mode(quiet=True)
+
+    # ------------------------------------------------------------ 配置读取
+
+    def _cfg(self, key: str, default: Any = None) -> Any:
+        try:
+            value = self.config.get(key, default)
+        except Exception:  # noqa: BLE001
+            return default
+        return default if value is None else value
+
+    def _list_cfg(self, key: str, default: list) -> list:
+        value = self._cfg(key, default)
+        if isinstance(value, str):
+            return [item.strip() for item in re.split(r"[\n,]", value) if item.strip()]
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+        return default
+
+    def _enabled(self, name: str) -> bool:
+        """DISABLED_PLATFORMS 里可以写英文 key 或中文名"""
+        disabled = {item.lower() for item in self._list_cfg("DISABLED_PLATFORMS", [])}
+        if not disabled:
+            return True
+        return name.lower() not in disabled and PLATFORM_ALIASES.get(name, "") not in disabled
+
+    def _apply_file_service_mode(self, quiet: bool = False) -> None:
+        """
+        视频发送模式选择。
+
+        * 全局配了 callback_api_base → Video.to_dict() 会把本地文件注册成 URL，大文件走这条路最稳
+        * 没配 → 把视频读成 base64:// 发送（NapCat 在容器里看不到宿主机路径）
+        """
+        base = ""
+        try:
+            cfg = self.context.get_config()
+            base = str((cfg or {}).get("callback_api_base") or "")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"[R插件] 读取全局 callback_api_base 失败，按 base64 模式发送视频: {exc}")
+        self.file_service_base = base
+        set_file_service(bool(base))
+        if not quiet:
+            logger.info(f"[R插件] 视频发送模式：{'文件服务 ' + base if base else 'base64（未配置 callback_api_base）'}")
+
+    # ------------------------------------------------------------ 生命周期
 
     async def initialize(self):
-        """可选择实现异步的插件初始化方法，当实例化该插件类之后会自动调用该方法。"""
-
-    @filter.regex(r".*(bilibili\.com|b23\.tv|bili2233\.cn|BV[1-9a-zA-Z]{10}).*")
-    async def bilibili(self, event: AstrMessageEvent):
-        """
-        处理B站链接，业务逻辑已移至 core/bili23.py
-        """
-        async for result in process_bilibili_url(event, self.credential, self.VIDEO_DURATION_MAXIMUM):
-            yield result
-
-    @filter.regex(r".*v\.douyin\.com\/[A-Za-z\d._?%&+\-=#]*.*")
-    async def douyin(self, event: AstrMessageEvent):
-        """
-        处理抖音链接，业务逻辑已移至 core/douyin.py
-        """
-        async for result in process_douyin_url(event, self.DOUYIN_CK):
-            yield result
-            
-    @filter.regex(r".*(https?:\/\/)?(?:www\.)?(xhslink\.com|xiaohongshu\.com)\/[A-Za-z\d._?%&+\-=\/#@]*.*")
-    async def xiaohongshu(self, event: AstrMessageEvent):
-        """
-        处理小红书链接，业务逻辑已移至 core/xhs.py
-        """
-        async for result in process_xiaohongshu_url(event, self.XHS_CK):
-            yield result
+        self._apply_file_service_mode()
+        logger.info(f"[R插件] 已加载，解析平台：{'、'.join(PLATFORM_ALIASES.values())}")
 
     async def terminate(self):
-        """可选择实现异步的插件销毁方法，当插件被卸载/停用时会调用。"""
+        logger.info("[R插件] 已卸载")
+
+    # ------------------------------------------------------------ 抖音
+
+    @filter.regex(r".*(douyin\.com|iesdouyin\.com|webcast\.amemv\.com).*")
+    async def douyin(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
+        if not self._enabled("douyin"):
+            return
+        async for result in process_douyin_url(
+            event,
+            douyin_ck=self.douyin_ck,
+            video_duration_maximum=self.douyin_duration,
+            identify_prefix=self.identify_prefix,
+            display_cover=self.douyin_display_cover,
+            image_batch_threshold=self.image_batch_threshold,
+            video_size_limit_mb=self.video_size_limit_mb,
+            image_use_forward=self.image_use_forward,
+            enable_ssr=self.douyin_enable_ssr,
+        ):
+            yield result
+
+    # ------------------------------------------------------------ 哔哩哔哩
+
+    @filter.regex(r".*(bilibili\.com|b23\.tv|bili2233\.cn|BV[1-9a-zA-Z]{10}).*")
+    async def bilibili(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
+        if not self._enabled("bilibili"):
+            return
+        async for result in process_bilibili_url(
+            event,
+            self.credential,
+            self.bili_duration,
+            video_size_limit_mb=self.video_size_limit_mb,
+            display_cover=self.bili_display_cover,
+            display_info=self.bili_display_info,
+            display_intro=self.bili_display_intro,
+            display_online=self.bili_display_online,
+            intro_len_limit=self.bili_intro_len_limit,
+        ):
+            yield result
+
+    # ------------------------------------------------------------ 快手 / 西瓜 / 皮皮虾等
+
+    @filter.regex(
+        r".*(kuaishou\.com|chenzhongtech\.com|ixigua\.com|pipix\.com|pipigx\.com|xsj\.qq\.com|okjike\.com).*"
+    )
+    async def general(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
+        if not self._enabled("kuaishou"):
+            return
+        async for result in process_general_url(
+            event,
+            parse_apis=self.general_parse_apis,
+            identify_prefix=self.identify_prefix,
+            image_batch_threshold=self.image_batch_threshold,
+            video_size_limit_mb=self.video_size_limit_mb,
+            image_use_forward=self.image_use_forward,
+        ):
+            yield result
+
+    # ------------------------------------------------------------ 微博
+
+    @filter.regex(r".*(weibo\.com|weibo\.cn).*")
+    async def weibo(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
+        if not self._enabled("weibo"):
+            return
+        async for result in process_weibo_url(
+            event,
+            cookie=self.weibo_ck,
+            identify_prefix=self.identify_prefix,
+            enable_comments=self.weibo_comments,
+            image_batch_threshold=self.image_batch_threshold,
+            video_size_limit_mb=self.video_size_limit_mb,
+            image_use_forward=self.image_use_forward,
+        ):
+            yield result
+
+    # ------------------------------------------------------------ AcFun
+
+    @filter.regex(r".*(acfun\.cn|ac[0-9]{6,10}).*")
+    async def acfun(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
+        if not self._enabled("acfun"):
+            return
+        async for result in process_acfun_url(
+            event,
+            identify_prefix=self.identify_prefix,
+            video_size_limit_mb=self.video_size_limit_mb,
+        ):
+            yield result
+
+    # ------------------------------------------------------------ 小红书
+
+    @filter.regex(r".*(xhslink\.(com|cn)|xiaohongshu\.com).*")
+    async def xiaohongshu(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
+        if not self._enabled("xhs"):
+            return
+        async for result in process_xiaohongshu_url(
+            event,
+            self.xhs_ck,
+            image_use_forward=self.image_use_forward,
+            image_batch_threshold=self.image_batch_threshold,
+            video_size_limit_mb=self.video_size_limit_mb,
+            identify_prefix=self.identify_prefix,
+            desc_len_limit=self.xhs_desc_len_limit,
+        ):
+            yield result
+
+    # ------------------------------------------------------------ 米游社
+
+    @filter.regex(r".*miyoushe\.com.*")
+    async def miyoushe(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
+        if not self._enabled("miyoushe"):
+            return
+        async for result in process_miyoushe_url(
+            event,
+            identify_prefix=self.identify_prefix,
+            image_batch_threshold=self.image_batch_threshold,
+            video_size_limit_mb=self.video_size_limit_mb,
+            image_use_forward=self.image_use_forward,
+        ):
+            yield result
+
+    # ------------------------------------------------------------ 小黑盒
+
+    @filter.regex(r".*xiaoheihe\.cn.*")
+    async def xiaoheihe(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
+        if not self._enabled("xiaoheihe"):
+            return
+        async for result in process_xiaoheihe_url(
+            event,
+            cookie=self.xhh_ck,
+            identify_prefix=self.identify_prefix,
+            image_batch_threshold=self.image_batch_threshold,
+            video_size_limit_mb=self.video_size_limit_mb,
+            msg_element_limit=self.msg_element_limit,
+            comment_limit=self.xhh_comment_limit,
+        ):
+            yield result
+
+    # ------------------------------------------------------------ 微视
+
+    @filter.regex(r".*weishi\.qq\.com.*")
+    async def weishi(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
+        if not self._enabled("weishi"):
+            return
+        async for result in process_weishi_url(
+            event,
+            identify_prefix=self.identify_prefix,
+            video_size_limit_mb=self.video_size_limit_mb,
+        ):
+            yield result

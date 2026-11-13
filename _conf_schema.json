@@ -1,27 +1,166 @@
 {
-  "BILI_SESSDATA": {
-    "description": "哔哩哔哩_Session",
+  "IDENTIFY_PREFIX": {
+    "description": "【全局】识别前缀",
     "type": "string",
-    "hint": "通过哔哩哔哩的Cookie获取",
+    "default": "识别：",
+    "hint": "解析结果前面的文案，例如「识别：抖音」。留空则不带前缀",
     "obvious_hint": true
   },
   "VIDEO_DURATION_MAXIMUM": {
-    "description": "视频时长上限",
+    "description": "【全局】视频时长上限（秒）",
     "type": "int",
     "default": 480,
-    "hint": "单位:秒",
+    "hint": "平台没单独配置时用这个值。超过上限只发封面和文字，不下载视频",
     "obvious_hint": true
   },
+  "VIDEO_SIZE_LIMIT_MB": {
+    "description": "【全局】视频体积上限（MB）",
+    "type": "int",
+    "default": 30,
+    "hint": "默认 30（填 0 也按 30 算）。超过上限只发文字和原链接。没配 callback_api_base 时视频走 base64，建议别超过 50"
+  },
+  "IMAGE_USE_FORWARD": {
+    "description": "【全局】多图改用合并转发",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后图集/多图走合并转发（一张图一个节点），不会刷屏；关掉则直接按条发图",
+    "obvious_hint": true
+  },
+  "IMAGE_BATCH_THRESHOLD": {
+    "description": "【全局】合并转发每批图片数",
+    "type": "int",
+    "default": 0,
+    "hint": "0 = 全部塞进一条合并转发；填 N 则每条转发最多 N 张，超过拆成多条转发"
+  },
+  "MSG_ELEMENT_LIMIT": {
+    "description": "【全局】单条转发消息元素上限",
+    "type": "int",
+    "default": 50,
+    "hint": "图文混排的转发（小黑盒帖子等）单条最多装多少个元素，超过会拆成多条转发。发送失败时可以调小",
+    "obvious_hint": true
+  },
+  "DISABLED_PLATFORMS": {
+    "description": "【全局】禁用的解析平台",
+    "type": "list",
+    "default": [],
+    "hint": "可选：douyin / bilibili / kuaishou / weibo / acfun / xhs / miyoushe / xiaoheihe / weishi（也可写中文名）"
+  },
+  "GENERAL_PARSE_APIS": {
+    "description": "【全局】通用第三方解析接口",
+    "type": "text",
+    "default": "http://47.99.158.118/video-crack/v2/parse?content={}\nhttps://api.jkyai.top/API/jhspjx.php?url={}\nhttps://api.yujn.cn/api/pipixia.php?url={}\nhttps://api.bugpk.com/api/pipixia?url={}",
+    "hint": "每行一个接口，{} 为原始链接占位。用于快手原生解析失败时的兜底，以及西瓜/皮皮虾/QQ小世界/即刻"
+  },
+
+  "BILI_SESSDATA": {
+    "description": "【哔哩哔哩】SESSDATA",
+    "type": "string",
+    "default": "",
+    "hint": "从哔哩哔哩 Cookie 中获取，用于高清晰度解析",
+    "obvious_hint": true
+  },
+  "BILI_DURATION": {
+    "description": "【哔哩哔哩】视频时长上限（秒）",
+    "type": "int",
+    "default": 0,
+    "hint": "0 = 沿用全局 VIDEO_DURATION_MAXIMUM；超时长只发信息不下载"
+  },
+  "BILI_DISPLAY_COVER": {
+    "description": "【哔哩哔哩】显示封面",
+    "type": "bool",
+    "default": true,
+    "hint": "关闭后只发文字信息"
+  },
+  "BILI_DISPLAY_INFO": {
+    "description": "【哔哩哔哩】显示点赞/收藏等数据",
+    "type": "bool",
+    "default": true,
+    "hint": "点赞、硬币、收藏、分享、播放、弹幕、评论数"
+  },
+  "BILI_DISPLAY_INTRO": {
+    "description": "【哔哩哔哩】显示简介",
+    "type": "bool",
+    "default": true,
+    "hint": "关闭后不显示视频简介"
+  },
+  "BILI_INTRO_LEN_LIMIT": {
+    "description": "【哔哩哔哩】简介长度限制",
+    "type": "int",
+    "default": 50,
+    "hint": "超过就截断加省略号，防止简介刷屏；填 0 或 -1 表示不限制"
+  },
+  "BILI_DISPLAY_ONLINE": {
+    "description": "【哔哩哔哩】显示在线人数",
+    "type": "bool",
+    "default": true,
+    "hint": "关闭后少发一次接口请求"
+  },
+
   "DOUYIN_CK": {
-    "description": "抖音Cookie",
+    "description": "【抖音】Cookie",
     "type": "string",
-    "hint": "通过抖音的Cookie获取",
+    "default": "",
+    "hint": "抖音网页端 Cookie。留空也能解析（走分享页 SSR + 第三方兜底），填了成功率更高",
     "obvious_hint": true
   },
-  "XHS_CK": {
-    "description": "小红书Cookie",
+  "DOUYIN_DURATION": {
+    "description": "【抖音】视频时长上限（秒）",
+    "type": "int",
+    "default": 0,
+    "hint": "0 = 沿用全局 VIDEO_DURATION_MAXIMUM"
+  },
+  "DOUYIN_DISPLAY_COVER": {
+    "description": "【抖音】显示封面",
+    "type": "bool",
+    "default": true,
+    "hint": "关闭后只发文字信息"
+  },
+  "DOUYIN_ENABLE_SSR": {
+    "description": "【抖音】启用分享页 SSR 兜底",
+    "type": "bool",
+    "default": true,
+    "hint": "SSR 页面时灵时不灵（抖音在逐步下线），留着没坏处；关掉后只走 Cookie 接口 + 第三方接口"
+  },
+
+  "WEIBO_CK": {
+    "description": "【微博】Cookie",
     "type": "string",
-    "hint": "通过小红书的Cookie获取",
+    "default": "",
+    "hint": "m.weibo.cn 的 Cookie，用于提高接口成功率、评论和投票贴图片",
     "obvious_hint": true
+  },
+  "WEIBO_COMMENTS": {
+    "description": "【微博】附带热门评论",
+    "type": "bool",
+    "default": true,
+    "hint": "关闭后只发正文、图片和视频"
+  },
+
+  "XHS_CK": {
+    "description": "【小红书】Cookie",
+    "type": "string",
+    "default": "",
+    "hint": "小红书网页端 Cookie（需要 a1 与 web_session），网页版必须带 Cookie 才能解析",
+    "obvious_hint": true
+  },
+  "XHS_DESC_LEN_LIMIT": {
+    "description": "【小红书】描述折叠长度",
+    "type": "int",
+    "default": 78,
+    "hint": "正文超过这个字数就折叠，并在后面补一条合并转发放全文；填 0 或 -1 表示不折叠、直接发全文"
+  },
+
+  "XHH_CK": {
+    "description": "【小黑盒】Cookie",
+    "type": "string",
+    "default": "",
+    "hint": "小黑盒网页端 Cookie（x_xhh_tokenid=xxx），必填，否则无法解析帖子与游戏详情",
+    "obvious_hint": true
+  },
+  "XHH_COMMENT_LIMIT": {
+    "description": "【小黑盒】评论条数上限",
+    "type": "int",
+    "default": 50,
+    "hint": "帖子最多转发多少条评论，太多会影响发送速度"
   }
 }

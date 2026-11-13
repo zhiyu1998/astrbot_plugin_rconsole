@@ -14,27 +14,62 @@ from bilibili_api import video, Credential, live, article
 from bilibili_api.opus import Opus
 from bilibili_api.video import VideoDownloadURLDataDetecter
 
-from .common import delete_boring_characters, remove_files
+from .common import (
+    delete_boring_characters,
+    delete_file,
+    local_image,
+    release_video,
+    remove_files,
+    video_components,
+)
 from ..constants.bili23 import *
 
-async def download_b_file(url, full_file_name, progress_callback):
+# B站 CDN 拉流很慢，默认 5 秒的 read timeout 必炸，这里给足时间
+BILI_DOWNLOAD_TIMEOUT = httpx.Timeout(connect=20.0, read=600.0, write=600.0, pool=30.0)
+
+
+async def download_b_file(url, full_file_name, progress_callback=None, retries=3):
     """
-        下载视频文件和音频文件
-    :param url:
-    :param full_file_name:
-    :param progress_callback:
-    :return:
+        下载视频文件和音频文件（带重试，避免大文件 ReadTimeout 直接失败）
+
+    :param url: 下载地址
+    :param full_file_name: 落地文件名
+    :param progress_callback: 进度回调，可为空
+    :param retries: 重试次数
+    :return: 落地文件名
     """
-    async with httpx.AsyncClient(transport=httpx.AsyncHTTPTransport(local_address="0.0.0.0")) as client:
-        async with client.stream("GET", url, headers=BILIBILI_HEADER) as resp:
-            current_len = 0
-            total_len = int(resp.headers.get('content-length', 0))
-            print(total_len)
-            async with aiofiles.open(full_file_name, "wb") as f:
-                async for chunk in resp.aiter_bytes():
-                    current_len += len(chunk)
-                    await f.write(chunk)
-                    progress_callback(f'下载进度：{round(current_len / total_len, 3)}')
+    progress_callback = progress_callback or (lambda _msg: None)
+    last_error = None
+
+    for attempt in range(1, retries + 1):
+        try:
+            async with httpx.AsyncClient(
+                transport=httpx.AsyncHTTPTransport(local_address="0.0.0.0"),
+                timeout=BILI_DOWNLOAD_TIMEOUT,
+            ) as client:
+                async with client.stream("GET", url, headers=BILIBILI_HEADER) as resp:
+                    if resp.status_code >= 400:
+                        raise RuntimeError(f"HTTP {resp.status_code}")
+                    total_len = int(resp.headers.get("content-length") or 0)
+                    current_len = 0
+                    async with aiofiles.open(full_file_name, "wb") as f:
+                        async for chunk in resp.aiter_bytes(262144):
+                            current_len += len(chunk)
+                            await f.write(chunk)
+                            if total_len:
+                                progress_callback(f"下载进度：{round(current_len / total_len, 3)}")
+                    # CDN 偶尔会提前断流，长度对不上就当失败重来
+                    if total_len and current_len < total_len:
+                        raise RuntimeError(f"下载不完整 {current_len}/{total_len}")
+            return full_file_name
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            logger.warning(f"[R插件][B站] 媒体下载失败（第 {attempt}/{retries} 次）: {exc}")
+            delete_file(full_file_name)
+            if attempt < retries:
+                await asyncio.sleep(2 * attempt)
+
+    raise RuntimeError(f"B站媒体下载失败: {last_error}")
 
 
 async def merge_file_to_mp4(v_full_file_name: str, a_full_file_name: str, output_file_name: str,
@@ -102,7 +137,27 @@ def extra_bili_info(video_info):
     return video_info_result
 
 
-async def process_bilibili_url(event: AstrMessageEvent, credential: Credential, video_duration_maximum: int):
+def _cleanup_bili_cache(download_path: str, merged: str) -> None:
+    """删掉合并产物与空目录，避免 data/bilibili_cache 越攒越大"""
+    release_video(merged)
+    try:
+        if os.path.isdir(download_path) and not os.listdir(download_path):
+            os.rmdir(download_path)
+    except OSError:
+        pass
+
+
+async def process_bilibili_url(
+    event: AstrMessageEvent,
+    credential: Credential,
+    video_duration_maximum: int,
+    video_size_limit_mb: int = 0,
+    display_cover: bool = True,
+    display_info: bool = True,
+    display_intro: bool = True,
+    display_online: bool = True,
+    intro_len_limit: int = 50,
+):
     """
         核心代码：处理B站链接
     """
@@ -294,22 +349,42 @@ async def process_bilibili_url(event: AstrMessageEvent, credential: Credential, 
             video_duration = video_info.get('duration', 0)
     # 删除特殊字符
     video_title = delete_boring_characters(video_title)
-    # 截断下载时间比较长的视频
-    online = await v.get_online()
-    online_str = f'🏄‍♂️ 总共 {online["total"]} 人在观看，{online["count"]} 人在网页端观看'
-    # 检查时长
+    # 按开关拼装信息：封面 / 统计 / 简介 / 在线人数
+    info_lines = [f"\n识别：B站，{video_title}"]
+    if display_info:
+        stats_line = extra_bili_info(video_info)
+        if stats_line:
+            info_lines.append(stats_line.rstrip(" |"))
+    if display_intro and video_desc:
+        intro = video_desc
+        if intro_len_limit and intro_len_limit > 0 and len(intro) > intro_len_limit:
+            intro = intro[:intro_len_limit] + "…"
+        info_lines.append(f"📝 简介：{intro}")
+    if display_online:
+        try:
+            online = await v.get_online()
+            info_lines.append(f'🏄‍♂️ 总共 {online["total"]} 人在观看，{online["count"]} 人在网页端观看')
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"[R插件][B站] 在线人数获取失败: {exc}")
+
+    # 封面先下到本地：hdslb 有时也挑 Referer，而且一张图挂掉会把整条消息链丢掉（正文也没了）
+    prefix_comps = []
+    if display_cover:
+        cover_comp = await local_image(video_cover, referer="https://www.bilibili.com/", prefix="bili_cover")
+        if cover_comp is not None:
+            prefix_comps.append(cover_comp)
+
+    info_text = "\n".join(info_lines)
     if video_duration <= video_duration_maximum:
-        yield event.chain_result([
-            Comp.Image.fromURL(video_cover),
-            Comp.Plain(
-                f"\n识别：B站，{video_title}\n{extra_bili_info(video_info)}\n📝 简介：{video_desc}\n{online_str}")
-        ])
+        yield event.chain_result(prefix_comps + [Comp.Plain(info_text)])
     else:
-        yield event.chain_result([
-            Comp.Image.fromURL(video_cover),
+        yield event.chain_result(prefix_comps + [
             Comp.Plain(
-                f"\n识别：B站，{video_title}\n{extra_bili_info(video_info)}\n简介：{video_desc}\n{online_str}\n---------\n⚠️ 当前视频时长 {video_duration // 60} 分钟，超过管理员设置的最长时间 {video_duration_maximum // 60} 分钟！")
+                f"{info_text}\n---------\n⚠️ 当前视频时长 {video_duration // 60} 分钟，超过管理员设置的最长时间 {video_duration_maximum // 60} 分钟！\n已跳过下载；需要下载就调大 BILI_DURATION / VIDEO_DURATION_MAXIMUM")
         ])
+        # 超时长不下载：省带宽，也避免把大文件塞进消息通道
+        return
+
     # 获取下载链接
     download_url_data = await v.get_download_url(page_index=page_num)
     detecter = VideoDownloadURLDataDetecter(download_url_data)
@@ -318,17 +393,32 @@ async def process_bilibili_url(event: AstrMessageEvent, credential: Credential, 
     # 下载视频和音频
     download_path = os.getcwd() + "/data/bilibili_cache/" + video_id
     os.makedirs(download_path, exist_ok=True)
+    merged = f"{download_path}.mp4"
     try:
         await asyncio.gather(
             download_b_file(video_url, f"{download_path}-video.m4s", logger.debug),
             download_b_file(audio_url, f"{download_path}-audio.m4s", logger.debug))
-        await merge_file_to_mp4(f"{download_path}-video.m4s", f"{download_path}-audio.m4s", f"{download_path}.mp4")
+        await merge_file_to_mp4(f"{download_path}-video.m4s", f"{download_path}-audio.m4s", merged)
+    except Exception as exc:
+        logger.error(f"[R插件][B站] 下载或合并失败: {exc}")
+        yield event.plain_result(f"B站视频下载失败：{exc}\n原视频：https://www.bilibili.com/video/{video_id}")
+        return
     finally:
         remove_res = remove_files([f"{download_path}-video.m4s", f"{download_path}-audio.m4s"])
         logger.info(remove_res)
-    # 发送出去
-    logger.info(f"{download_path}.mp4")
-    yield event.chain_result([Comp.Video.fromFileSystem(path=f"{download_path}.mp4")])
+
+    # 发送：NapCat 在容器里看不到宿主机路径，file:// 会 ENOENT，这里转 base64
+    logger.info(merged)
+    components = video_components(merged, f"{video_id}.mp4", video_size_limit_mb)
+    if components:
+        yield event.chain_result(components)
+    else:
+        yield event.plain_result(
+            f"视频已下载但无法发送：可能超过大小上限 {video_size_limit_mb}MB，或读取失败。\n"
+            f"原视频：https://www.bilibili.com/video/{video_id}"
+        )
+    _cleanup_bili_cache(download_path, merged)
+
     # AI 总结
     if credential:
         try:
