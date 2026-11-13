@@ -18,7 +18,7 @@ from bilibili_api import Credential
 
 from .core.acfun import process_acfun_url
 from .core.bili23 import process_bilibili_url
-from .core.common import set_download_limits, set_file_service
+from .core.common import set_aria2, set_download_limits, set_file_service
 from .core.douyin import process_douyin_url
 from .core.general import process_general_url
 from .core.miyoushe import process_miyoushe_url
@@ -121,6 +121,12 @@ class RPlugin(Star):
         self.download_threads = int(self._cfg("DOWNLOAD_THREADS", 4) or 0)
         set_download_limits(self.download_concurrency, self.download_threads)
 
+        # aria2c：视频走 aria2 多连接下载（没装就自动回退内置下载）
+        self.use_aria2 = bool(self._cfg("DOWNLOADS_USE_ARIA2", False))
+        self.aria2c_path = str(self._cfg("ARIA2C_PATH", "aria2c") or "aria2c")
+        set_aria2(self.use_aria2, self.aria2c_path)
+        self.bbdown_aria2c = bool(self._cfg("BILI_BBDOWN_ARIA2C", False))
+
     # ------------------------------------------------------------ 配置读取
 
     def _cfg(self, key: str, default: Any = None) -> Any:
@@ -212,6 +218,7 @@ class RPlugin(Star):
             use_bbdown=self.bili_use_bbdown,
             bbdown_path=self.bbdown_path,
             cdn=self.bili_cdn,
+            bbdown_aria2c=self.bbdown_aria2c,
         ):
             yield result
 

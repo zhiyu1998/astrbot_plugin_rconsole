@@ -253,6 +253,7 @@ async def run_bbdown(
     video_codec: str,
     sessdata: str = "",
     cdn: str = "",
+    use_aria2: bool = False,
     timeout: float = 900.0,
 ) -> str:
     """调用 BBDown 下载，返回生成的 mp4 路径"""
@@ -270,6 +271,9 @@ async def run_bbdown(
     upos = BILI_CDN_MAP.get(cdn) or ""
     if upos:
         args += ["--upos-host", upos]
+    if use_aria2:
+        # BBDown 会调用 PATH 里的 aria2c；没装的话它自己会退回内置下载
+        args.append("--use-aria2c")
 
     logger.info("[R插件][BBDown] " + " ".join(args))
     proc = await asyncio.create_subprocess_exec(
@@ -318,6 +322,7 @@ async def process_bilibili_url(
     use_bbdown: bool = False,
     bbdown_path: str = "BBDown",
     cdn: str = "不使用",
+    bbdown_aria2c: bool = False,
 ):
     """
         核心代码：处理B站链接
@@ -571,6 +576,7 @@ async def process_bilibili_url(
                     video_codec=video_codec,
                     sessdata=sessdata,
                     cdn=cdn,
+                    use_aria2=bbdown_aria2c,
                 )
                 source = "BBDown"
             except Exception as exc:  # noqa: BLE001

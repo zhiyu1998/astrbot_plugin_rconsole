@@ -19,6 +19,7 @@
 | AstrBot | v4.5.0 及以上 |
 | Python | 3.10+（用 AstrBot 自带的虚拟环境即可） |
 | ffmpeg | 可选但建议安装，AcFun 分片合并、部分视频合并需要 |
+| aria2 | 可选，开启后视频下载更快（多连接） |
 
 ### 方式一：面板安装（推荐）
 
@@ -64,6 +65,18 @@ yum install -y ffmpeg
 
 # Windows
 # 下载 https://www.gyan.dev/ffmpeg/builds/ 的 release 包，解压后把 bin 目录加进 PATH
+```
+
+### 安装 aria2（可选）
+
+装好后把面板里的 `DOWNLOADS_USE_ARIA2` 打开，>5MB 的视频会交给 aria2c 多连接下载；没装也不影响（自动回退内置下载）。
+
+```shell
+# Debian / Ubuntu
+apt install -y aria2
+
+# CentOS / RHEL
+yum install -y aria2
 ```
 
 ### 配置 Cookie
@@ -126,6 +139,8 @@ Cookie 获取：浏览器登录对应网站 → `F12` → **Network** → 随便
 | `MSG_ELEMENT_LIMIT` | `50` | 单条转发消息元素上限（图文混排，如小黑盒） |
 | `DOWNLOAD_CONCURRENCY` | `2` | 同时下载任务数（队列长度），服务器弱可调 1 |
 | `DOWNLOAD_THREADS` | `4` | 单文件 Range 分段并发数（>5MB 生效），0/1 = 不分段 |
+| `DOWNLOADS_USE_ARIA2` | `false` | 用 aria2c 下载视频，失败自动回退内置下载 |
+| `ARIA2C_PATH` | `aria2c` | aria2c 可执行文件路径（默认从 PATH 找） |
 | `DISABLED_PLATFORMS` | `[]` | 禁用的平台：`douyin` / `bilibili` / `kuaishou` / `weibo` / `acfun` / `xhs` / `miyoushe` / `xiaoheihe` / `weishi` |
 | `GENERAL_PARSE_APIS` | 见插件默认值 | 通用第三方解析接口，每行一个，`{}` 为原始链接占位 |
 
@@ -145,6 +160,7 @@ Cookie 获取：浏览器登录对应网站 → `F12` → **Network** → 随便
 | 哔哩哔哩 | `BILI_USE_BBDOWN` | `false` | 用 BBDown 接管下载，失败自动回退原生 |
 | 哔哩哔哩 | `BBDOWN_PATH` | `BBDown` | BBDown 可执行文件路径（默认从 PATH 找） |
 | 哔哩哔哩 | `BILI_CDN` | `不使用` | BBDown 强制 CDN（`--upos-host`） |
+| 哔哩哔哩 | `BILI_BBDOWN_ARIA2C` | `false` | 给 BBDown 加 `--use-aria2c` |
 | 抖音 | `DOUYIN_CK` | 空 | 抖音 Cookie，留空也能解析（成功率略低） |
 | 抖音 | `DOUYIN_DURATION` | `0` | 独立时长上限（秒），`0` 表示沿用全局 |
 | 抖音 | `DOUYIN_DISPLAY_COVER` | `true` | 是否显示封面 |

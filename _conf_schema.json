@@ -52,6 +52,19 @@
     "default": 4,
     "hint": "同一个文件按 Range 切几段并发下载（>5MB 且服务端支持 Range 才生效）；0 或 1 表示不分段。别设太大，容易被 CDN 限速"
   },
+  "DOWNLOADS_USE_ARIA2": {
+    "description": "【全局】用 aria2c 下载",
+    "type": "bool",
+    "default": false,
+    "hint": "开启后 >5MB 的视频交给 aria2c 多连接下载（需要服务器装 aria2）；未安装或下载失败会自动回退内置下载，图片不受影响",
+    "obvious_hint": true
+  },
+  "ARIA2C_PATH": {
+    "description": "【全局】aria2c 可执行文件路径",
+    "type": "string",
+    "default": "aria2c",
+    "hint": "默认从 PATH 找；也可以填绝对路径，例如 /usr/bin/aria2c"
+  },
   "DISABLED_PLATFORMS": {
     "description": "【全局】禁用的解析平台",
     "type": "list",
@@ -155,6 +168,12 @@
     "default": "不使用",
     "options": ["不使用", "腾讯CDN", "百度CDN", "华为CDN", "阿卡迈（海外）", "HK-CDN", "08ccdn"],
     "hint": "仅 BBDown 生效（--upos-host）；下载慢时可以换一个试试"
+  },
+  "BILI_BBDOWN_ARIA2C": {
+    "description": "【哔哩哔哩】BBDown 使用 aria2c",
+    "type": "bool",
+    "default": false,
+    "hint": "给 BBDown 加 --use-aria2c（需要服务器装 aria2）；不开则由 BBDown 自己单线程下载"
   },
 
   "DOUYIN_CK": {

@@ -13,6 +13,7 @@ import html as html_lib
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
 import uuid
@@ -52,6 +53,88 @@ def _sem() -> asyncio.Semaphore:
     if _download_sem is None:
         _download_sem = asyncio.Semaphore(_DOWNLOAD_CONCURRENCY)
     return _download_sem
+
+
+# ---------------------------------------------------------------- aria2c
+
+_USE_ARIA2 = False
+_ARIA2C_PATH = "aria2c"
+_ARIA2_MIN_MB = 5  # 小于这个就不折腾 aria2 了，起进程更慢
+
+
+def set_aria2(enabled: bool, path: str = "aria2c") -> None:
+    """开启内置 aria2c 下载；path 可以是命令名或绝对路径"""
+    global _USE_ARIA2, _ARIA2C_PATH
+    _USE_ARIA2 = bool(enabled)
+    _ARIA2C_PATH = (path or "aria2c").strip()
+
+
+def _resolve_aria2c() -> str:
+    candidate = _ARIA2C_PATH
+    if candidate and os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+        return candidate
+    return shutil.which(candidate or "aria2c") or ""
+
+
+async def _download_with_aria2(
+    url: str,
+    path: str,
+    headers: Dict[str, str],
+    connections: int,
+    timeout: float,
+) -> bool:
+    """调用 aria2c 下载，成功返回 True"""
+    binary = _resolve_aria2c()
+    if not binary:
+        return False
+
+    work_dir = os.path.dirname(path) or TEMP_DIR
+    ensure_dir(work_dir)
+    conns = str(max(1, min(int(connections or 8), 16)))
+    args = [
+        binary, url,
+        "-d", work_dir,
+        "-o", os.path.basename(path),
+        "-x", conns,
+        "-s", conns,
+        "-k", "1M",
+        "--allow-overwrite=true",
+        "--auto-file-renaming=false",
+        "--console-log-level=warn",
+        "--summary-interval=0",
+        "--max-tries=3",
+        "--retry-wait=2",
+        "--connect-timeout=20",
+        "--timeout=600",
+        f"--max-connection-per-server={conns}",
+    ]
+    for key, value in headers.items():
+        args += ["--header", f"{key}: {value}"]
+
+    logger.debug("[R插件][aria2c] " + " ".join(args))
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[R插件] 启动 aria2c 失败: {exc}")
+        return False
+
+    try:
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        proc.kill()
+        logger.warning(f"[R插件] aria2c 超时 {url[:80]}")
+        return False
+
+    if proc.returncode != 0:
+        tail = (stdout or b"").decode("utf-8", "ignore").strip().splitlines()[-3:]
+        logger.warning(f"[R插件] aria2c 退出码 {proc.returncode}: {' / '.join(tail)}")
+        return False
+    if not os.path.exists(path) or os.path.getsize(path) == 0:
+        logger.warning("[R插件] aria2c 完成但文件为空")
+        return False
+    return True
 
 
 async def _probe_range_size(url: str, headers: Dict[str, str], timeout: float) -> int:
@@ -361,9 +444,22 @@ async def download_file(
     seg_threads = _DOWNLOAD_THREADS if threads is None else max(0, int(threads))
 
     async with _sem():
-        # 大文件先探一下能不能分段
-        if seg_threads and seg_threads > 1:
+        # 只有视频这类调用会带 seg_threads（图片会传 0，避免每次多探一个请求）
+        want_aria2 = _USE_ARIA2 and seg_threads > 0
+        total = 0
+        if want_aria2 or (seg_threads and seg_threads > 1):
             total = await _probe_range_size(url, req_headers, timeout)
+
+        # aria2c 优先（多连接 + 断点重试都由它负责）
+        if want_aria2 and (not total or total >= _ARIA2_MIN_MB * 1024 * 1024):
+            if await _download_with_aria2(url, path, req_headers, seg_threads * 4, timeout):
+                return path
+            logger.warning("[R插件] aria2c 下载失败，回退内置下载")
+            delete_file(path)
+            delete_file(path + ".aria2")
+
+        # 没有 aria2c 就用自己的 Range 分段
+        if seg_threads and seg_threads > 1:
             if total and total >= _DOWNLOAD_SEGMENT_MIN_MB * 1024 * 1024:
                 logger.info(f"[R插件] 分段下载 {seg_threads} 线程，共 {total / 1024 / 1024:.1f}MB: {url[:80]}")
                 if await _download_segmented(url, path, total, req_headers, seg_threads, timeout):
@@ -405,7 +501,9 @@ async def download_images(
 
     async def _one(index: int, url: str) -> Optional[str]:
         path = build_temp_path(f"{prefix}_{index}", ".jpg")
-        return await download_file(url, path, headers=headers, referer=referer, timeout=60)
+        return await download_file(
+            url, path, headers=headers, referer=referer, timeout=60, threads=0
+        )
 
     results = await asyncio.gather(*[_one(i, u) for i, u in enumerate(targets)], return_exceptions=True)
     return [r for r in results if isinstance(r, str)]
