@@ -39,6 +39,19 @@
     "hint": "图文混排的转发（小黑盒帖子等）单条最多装多少个元素，超过会拆成多条转发。发送失败时可以调小",
     "obvious_hint": true
   },
+  "DOWNLOAD_CONCURRENCY": {
+    "description": "【全局】同时下载任务数（队列）",
+    "type": "int",
+    "default": 4,
+    "hint": "同时最多几个下载任务在跑，相当于队列长度。服务器弱就调到 1~2，靠前的任务会排队等待",
+    "obvious_hint": true
+  },
+  "DOWNLOAD_THREADS": {
+    "description": "【全局】单文件下载线程数",
+    "type": "int",
+    "default": 4,
+    "hint": "同一个文件按 Range 切几段并发下载（>5MB 且服务端支持 Range 才生效）；0 或 1 表示不分段。别设太大，容易被 CDN 限速"
+  },
   "DISABLED_PLATFORMS": {
     "description": "【全局】禁用的解析平台",
     "type": "list",

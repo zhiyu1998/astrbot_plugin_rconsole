@@ -28,6 +28,89 @@ from astrbot.api.event import AstrMessageEvent
 DATA_DIR = os.path.join(os.getcwd(), "data", "astrbot_plugin_rconsole")
 TEMP_DIR = os.path.join(DATA_DIR, "temp")
 
+# ---------------------------------------------------------------- 下载并发
+
+# 任务级并发：同时最多几个下载在跑（相当于 R 插件的 queueConcurrency）
+_DOWNLOAD_CONCURRENCY = 4
+# 单文件分段数：同一个文件切成几段并发拉（相当于 videoDownloadConcurrency）
+_DOWNLOAD_THREADS = 4
+# 小于这个大小就不折腾分段了
+_DOWNLOAD_SEGMENT_MIN_MB = 5
+_download_sem: Optional[asyncio.Semaphore] = None
+
+
+def set_download_limits(concurrency: int = 4, threads: int = 4) -> None:
+    """配置下载并发：concurrency=队列长度（同时几个任务），threads=单文件分段数"""
+    global _DOWNLOAD_CONCURRENCY, _DOWNLOAD_THREADS, _download_sem
+    _DOWNLOAD_CONCURRENCY = max(1, int(concurrency or 1))
+    _DOWNLOAD_THREADS = max(0, int(threads or 0))
+    _download_sem = asyncio.Semaphore(_DOWNLOAD_CONCURRENCY)
+
+
+def _sem() -> asyncio.Semaphore:
+    global _download_sem
+    if _download_sem is None:
+        _download_sem = asyncio.Semaphore(_DOWNLOAD_CONCURRENCY)
+    return _download_sem
+
+
+async def _probe_range_size(url: str, headers: Dict[str, str], timeout: float) -> int:
+    """探测文件总大小；服务端不支持 Range 时返回 0"""
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
+            resp = await client.get(url, headers={**headers, "Range": "bytes=0-1"})
+        if resp.status_code == 206:
+            match = re.search(r"/(\d+)", resp.headers.get("content-range", ""))
+            if match:
+                return int(match.group(1))
+        return 0
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+async def _download_segmented(
+    url: str,
+    path: str,
+    total: int,
+    headers: Dict[str, str],
+    threads: int,
+    timeout: float,
+) -> bool:
+    """Range 分段并发下载，全部成功返回 True"""
+    threads = max(2, min(threads, 16))
+    seg_size = total // threads
+    segments = []
+    for index in range(threads):
+        start = index * seg_size
+        end = total - 1 if index == threads - 1 else (start + seg_size - 1)
+        segments.append((start, end))
+
+    with open(path, "wb") as fp:
+        fp.truncate(total)
+
+    async def _one(start: int, end: int) -> bool:
+        try:
+            async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
+                async with client.stream(
+                    "GET", url, headers={**headers, "Range": f"bytes={start}-{end}"}
+                ) as resp:
+                    if resp.status_code != 206:
+                        return False
+                    with open(path, "r+b") as fp:
+                        fp.seek(start)
+                        written = 0
+                        async for chunk in resp.aiter_bytes(65536):
+                            fp.write(chunk)
+                            written += len(chunk)
+                        return written == end - start + 1
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"[R插件] 分段下载失败 {start}-{end}: {exc}")
+            return False
+
+    results = await asyncio.gather(*[_one(s, e) for s, e in segments])
+    return all(results)
+
+
 # ---------------------------------------------------------------- 基础文本工具
 
 
@@ -260,31 +343,51 @@ async def download_file(
     headers: Optional[Dict[str, str]] = None,
     timeout: float = 180.0,
     referer: Optional[str] = None,
+    threads: Optional[int] = None,
 ) -> Optional[str]:
-    """流式下载到本地，返回路径；失败返回 None"""
+    """
+    流式下载到本地，返回路径；失败返回 None。
+
+    * 全局 `_download_sem` 限制同时下载的任务数（相当于队列）
+    * 文件够大且服务端支持 Range 时，按 `_DOWNLOAD_THREADS` 分段并发拉（相当于多线程下载）
+    """
     if not url:
         return None
     ensure_dir(os.path.dirname(path) or TEMP_DIR)
     req_headers = {"User-Agent": "Mozilla/5.0", **(headers or {})}
     if referer:
         req_headers.setdefault("Referer", referer)
-    try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
-            async with client.stream("GET", url, headers=req_headers) as resp:
-                if resp.status_code >= 400:
-                    logger.warning(f"[R插件] 下载失败 {url} 状态码 {resp.status_code}")
-                    return None
-                with open(path, "wb") as fp:
-                    async for chunk in resp.aiter_bytes(65536):
-                        fp.write(chunk)
-        if os.path.getsize(path) == 0:
+
+    seg_threads = _DOWNLOAD_THREADS if threads is None else max(0, int(threads))
+
+    async with _sem():
+        # 大文件先探一下能不能分段
+        if seg_threads and seg_threads > 1:
+            total = await _probe_range_size(url, req_headers, timeout)
+            if total and total >= _DOWNLOAD_SEGMENT_MIN_MB * 1024 * 1024:
+                logger.info(f"[R插件] 分段下载 {seg_threads} 线程，共 {total / 1024 / 1024:.1f}MB: {url[:80]}")
+                if await _download_segmented(url, path, total, req_headers, seg_threads, timeout):
+                    return path
+                logger.warning("[R插件] 分段下载失败，回退单连接下载")
+                delete_file(path)
+
+        try:
+            async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
+                async with client.stream("GET", url, headers=req_headers) as resp:
+                    if resp.status_code >= 400:
+                        logger.warning(f"[R插件] 下载失败 {url} 状态码 {resp.status_code}")
+                        return None
+                    with open(path, "wb") as fp:
+                        async for chunk in resp.aiter_bytes(65536):
+                            fp.write(chunk)
+            if os.path.getsize(path) == 0:
+                delete_file(path)
+                return None
+            return path
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"[R插件] 下载异常 {url}: {exc}")
             delete_file(path)
             return None
-        return path
-    except Exception as exc:  # noqa: BLE001
-        logger.warning(f"[R插件] 下载异常 {url}: {exc}")
-        delete_file(path)
-        return None
 
 
 async def download_images(

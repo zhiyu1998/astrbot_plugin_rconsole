@@ -18,7 +18,7 @@ from bilibili_api import Credential
 
 from .core.acfun import process_acfun_url
 from .core.bili23 import process_bilibili_url
-from .core.common import set_file_service
+from .core.common import set_download_limits, set_file_service
 from .core.douyin import process_douyin_url
 from .core.general import process_general_url
 from .core.miyoushe import process_miyoushe_url
@@ -115,6 +115,11 @@ class RPlugin(Star):
         # 否则 NapCat 在容器里看不到宿主机路径，只能走 base64
         self.file_service_base = ""
         self._apply_file_service_mode(quiet=True)
+
+        # 下载并发：concurrency = 同时几个任务（队列），threads = 单文件分段数（多线程）
+        self.download_concurrency = int(self._cfg("DOWNLOAD_CONCURRENCY", 4) or 4)
+        self.download_threads = int(self._cfg("DOWNLOAD_THREADS", 4) or 0)
+        set_download_limits(self.download_concurrency, self.download_threads)
 
     # ------------------------------------------------------------ 配置读取
 

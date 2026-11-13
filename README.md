@@ -60,6 +60,8 @@ git clone https://github.com/zhiyu1998/astrbot_plugin_rconsole.git ./data/plugin
 | `IMAGE_USE_FORWARD` | `true` | 多图走合并转发（一张图一个节点），不会刷屏 |
 | `IMAGE_BATCH_THRESHOLD` | `0` | 每条转发最多几张图，`0` 表示全部塞进一条 |
 | `MSG_ELEMENT_LIMIT` | `50` | 单条转发消息元素上限（图文混排，如小黑盒） |
+| `DOWNLOAD_CONCURRENCY` | `4` | 同时下载任务数（队列长度），服务器弱可调 1~2 |
+| `DOWNLOAD_THREADS` | `4` | 单文件 Range 分段并发数（>5MB 生效），0/1 = 不分段 |
 | `DISABLED_PLATFORMS` | `[]` | 禁用的平台：`douyin` / `bilibili` / `kuaishou` / `weibo` / `acfun` / `xhs` / `miyoushe` / `xiaoheihe` / `weishi` |
 | `GENERAL_PARSE_APIS` | 见插件默认值 | 通用第三方解析接口，每行一个，`{}` 为原始链接占位 |
 
