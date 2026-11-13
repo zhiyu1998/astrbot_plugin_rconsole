@@ -16,6 +16,7 @@ from bilibili_api.opus import Opus
 from bilibili_api.video import VideoDownloadURLDataDetecter
 
 from .common import (
+    cache_dir,
     delete_boring_characters,
     delete_file,
     local_image,
@@ -552,7 +553,7 @@ async def process_bilibili_url(
         return
 
     # ==================== 下载：BBDown 优先，其次原生 ====================
-    download_root = os.path.join(os.getcwd(), "data", "bilibili_cache")
+    download_root = cache_dir("bilibili_cache")
     os.makedirs(download_root, exist_ok=True)
     merged = os.path.join(download_root, f"{video_id}.mp4")
     sessdata = getattr(credential, "sessdata", "") or ""

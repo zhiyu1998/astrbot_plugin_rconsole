@@ -27,7 +27,39 @@ from astrbot.api.event import AstrMessageEvent
 # ---------------------------------------------------------------- 路径
 
 DATA_DIR = os.path.join(os.getcwd(), "data", "astrbot_plugin_rconsole")
-TEMP_DIR = os.path.join(DATA_DIR, "temp")
+DEFAULT_TEMP_DIR = os.path.join(DATA_DIR, "temp")
+# 实际使用的暂存目录，可被配置 TEMP_PATH 覆盖（见 set_temp_dir）
+TEMP_DIR = DEFAULT_TEMP_DIR
+
+
+def set_temp_dir(path: str = "") -> str:
+    """
+    设置视频/图片的暂存目录（对应 R 插件的「视频暂存位置」）。
+
+    留空 → 默认 data/astrbot_plugin_rconsole/temp；
+    相对路径基于 AstrBot 的启动目录；绝对路径原样使用。
+    """
+    global TEMP_DIR
+    target = (path or "").strip()
+    if not target:
+        TEMP_DIR = DEFAULT_TEMP_DIR
+    elif os.path.isabs(target):
+        TEMP_DIR = os.path.abspath(target)
+    else:
+        TEMP_DIR = os.path.abspath(os.path.join(os.getcwd(), target))
+    ensure_dir(TEMP_DIR)
+    logger.info(f"[R插件] 暂存目录：{TEMP_DIR}")
+    return TEMP_DIR
+
+
+def temp_dir() -> str:
+    """当前暂存目录"""
+    return TEMP_DIR
+
+
+def cache_dir(name: str) -> str:
+    """暂存目录下的子目录（按平台分），不存在会自动创建"""
+    return ensure_dir(os.path.join(TEMP_DIR, name))
 
 # ---------------------------------------------------------------- 下载并发
 

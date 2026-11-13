@@ -139,6 +139,7 @@ Cookie 获取：浏览器登录对应网站 → `F12` → **Network** → 随便
 | `MSG_ELEMENT_LIMIT` | `50` | 单条转发消息元素上限（图文混排，如小黑盒） |
 | `DOWNLOAD_CONCURRENCY` | `2` | 同时下载任务数（队列长度），服务器弱可调 1 |
 | `DOWNLOAD_THREADS` | `4` | 单文件 Range 分段并发数（>5MB 生效），0/1 = 不分段 |
+| `TEMP_PATH` | 空 | 视频/图片暂存目录，留空 = `data/astrbot_plugin_rconsole/temp` |
 | `DOWNLOADS_USE_ARIA2` | `false` | 用 aria2c 下载视频，失败自动回退内置下载 |
 | `ARIA2C_PATH` | `aria2c` | aria2c 可执行文件路径（默认从 PATH 找） |
 | `DISABLED_PLATFORMS` | `[]` | 禁用的平台：`douyin` / `bilibili` / `kuaishou` / `weibo` / `acfun` / `xhs` / `miyoushe` / `xiaoheihe` / `weishi` |

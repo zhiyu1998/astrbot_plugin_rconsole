@@ -65,6 +65,13 @@
     "default": "aria2c",
     "hint": "默认从 PATH 找；也可以填绝对路径，例如 /usr/bin/aria2c"
   },
+  "TEMP_PATH": {
+    "description": "【全局】视频/图片暂存目录",
+    "type": "string",
+    "default": "",
+    "hint": "留空 = data/astrbot_plugin_rconsole/temp。可以填绝对路径（如 /home/AstrBot/data/tmp），相对路径基于 AstrBot 启动目录。视频、图片、BBDown 产物都放这里，发送完自动清理",
+    "obvious_hint": true
+  },
   "DISABLED_PLATFORMS": {
     "description": "【全局】禁用的解析平台",
     "type": "list",

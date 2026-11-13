@@ -14,6 +14,7 @@ from astrbot.api.event import AstrMessageEvent
 from astrbot.api import logger
 
 from .common import (
+    cache_dir,
     create_forward_message,
     delete_boring_characters,
     local_image,
@@ -34,16 +35,9 @@ COMMON_HEADER = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 }
 
-# 数据目录和缓存目录
-DATA_DIR = os.path.join(os.getcwd(), "data")
-CACHE_DIR = os.path.join(DATA_DIR, "xhs_cache")
-
-# 确保缓存目录存在
-try:
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    logger.info(f"确保小红书缓存目录存在: {CACHE_DIR}")
-except Exception as e:
-    logger.error(f"创建目录失败: {e}")
+# 缓存目录跟随全局暂存目录（common.set_temp_dir），不再写死
+def _cache_dir() -> str:
+    return cache_dir("xhs_cache")
 
 async def download_img(url: str, path: str, session: Optional[aiohttp.ClientSession] = None) -> str:
     """
@@ -75,11 +69,11 @@ async def download_video(url: str) -> str:
     :return: 保存的文件路径
     """
     # 确保缓存目录存在
-    os.makedirs(CACHE_DIR, exist_ok=True)
+    os.makedirs(_cache_dir(), exist_ok=True)
     
     # 生成唯一文件名
     filename = f"xhs_video_{int(time.time())}_{random.randint(1000, 9999)}.mp4"
-    path = os.path.join(CACHE_DIR, filename)
+    path = os.path.join(_cache_dir(), filename)
     
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
@@ -95,7 +89,7 @@ def save_to_cache(note_id: str, data: Dict[str, Any]) -> None:
     :param note_id: 笔记ID
     :param data: 笔记数据
     """
-    cache_path = os.path.join(CACHE_DIR, f"{note_id}.json")
+    cache_path = os.path.join(_cache_dir(), f"{note_id}.json")
     try:
         # 确保目录存在
         os.makedirs(os.path.dirname(cache_path), exist_ok=True)
@@ -121,7 +115,7 @@ def get_from_cache(note_id: str, max_age: int = 86400) -> Optional[Dict[str, Any
     :param max_age: 最大缓存时间（秒），默认1天
     :return: 笔记数据或None
     """
-    cache_path = os.path.join(CACHE_DIR, f"{note_id}.json")
+    cache_path = os.path.join(_cache_dir(), f"{note_id}.json")
     
     if not os.path.exists(cache_path):
         return None
@@ -512,7 +506,7 @@ async def process_xiaohongshu_url(
         yield event.plain_result("未找到图片内容")
         return
 
-    os.makedirs(CACHE_DIR, exist_ok=True)
+    os.makedirs(_cache_dir(), exist_ok=True)
     image_paths = []
     async with aiohttp.ClientSession() as session:
         download_tasks = []
@@ -520,7 +514,7 @@ async def process_xiaohongshu_url(
             image_url = item.get("url", "")
             if not image_url:
                 continue
-            path = os.path.join(CACHE_DIR, f"xhs_{xhs_id}_{index}.jpg")
+            path = os.path.join(_cache_dir(), f"xhs_{xhs_id}_{index}.jpg")
             download_tasks.append(asyncio.create_task(download_img(image_url, path, session=session)))
         if download_tasks:
             image_paths = [p for p in await asyncio.gather(*download_tasks) if p]

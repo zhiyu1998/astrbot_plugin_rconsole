@@ -18,7 +18,7 @@ from bilibili_api import Credential
 
 from .core.acfun import process_acfun_url
 from .core.bili23 import process_bilibili_url
-from .core.common import set_aria2, set_download_limits, set_file_service
+from .core.common import set_aria2, set_download_limits, set_file_service, set_temp_dir
 from .core.douyin import process_douyin_url
 from .core.general import process_general_url
 from .core.miyoushe import process_miyoushe_url
@@ -57,7 +57,7 @@ _CODEC_ALIAS = {
     PLUGIN_NAME,
     "RrOrange",
     "R插件迁移版：抖音/B站/快手/微博/AcFun/小红书/米游社/小黑盒/微视 链接解析",
-    "1.2.2",
+    "1.2.3",
 )
 class RPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -126,6 +126,9 @@ class RPlugin(Star):
         self.aria2c_path = str(self._cfg("ARIA2C_PATH", "aria2c") or "aria2c")
         set_aria2(self.use_aria2, self.aria2c_path)
         self.bbdown_aria2c = bool(self._cfg("BILI_BBDOWN_ARIA2C", False))
+
+        # 视频/图片暂存目录（对应 R 插件的「视频暂存位置」），留空用插件默认目录
+        set_temp_dir(str(self._cfg("TEMP_PATH", "") or ""))
 
     # ------------------------------------------------------------ 配置读取
 
