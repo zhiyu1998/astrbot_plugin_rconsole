@@ -1,7 +1,48 @@
 name: astrbot_plugin_rconsole
-display_name: R插件
-desc: R插件迁移版，抖音/B站/快手/微博/AcFun/小红书/米游社/小黑盒/微视 链接解析
+display_name: R插件（多媒体链接解析）
+short_desc: 抖音/B站/快手/微博/AcFun/小红书/米游社/小黑盒/微视 链接解析，直接发链接就能出图文视频
+desc: |
+  专门为朋友们写的AstrBot插件（AstrBot_R插件的迁移版本），专注图片视频分享、生活、健康和学习的插件！
+
+  迁移自 Yunzai 的 R 插件（原作者 RrOrange），把主流内容平台的分享链接/卡片自动解析成可直接观看的图文与视频。
+
+  **支持的平台**
+
+  | 平台 | 说明 |
+  | --- | --- |
+  | 哔哩哔哩 | 视频 / 番剧 / 专栏 / 动态，支持画质选择、BBDown 下载 |
+  | 抖音 | 短视频、图集，无 Cookie 时可走分享页 SSR 兜底 |
+  | 快手 | 原生页面解析，失败回退第三方接口 |
+  | 西瓜视频 / 皮皮虾 / 皮皮搞笑 / QQ小世界 / 即刻 | 依赖第三方解析接口，可在配置里替换 |
+  | 微博 | 正文、九宫格、视频、热门评论、投票贴图片 |
+  | AcFun | m3u8 分片下载 + ffmpeg 合并 |
+  | 小红书 | 图文 / 视频，正文超长自动折叠 |
+  | 米游社 | 帖子图文 / 视频 |
+  | 小黑盒 | 帖子（图文混排、游戏卡片、评论）+ PC / 主机 / 手机游戏详情 |
+  | 微视 | 短视频 |
+
+  **主要特性**
+
+  - 直接把链接丢群里就会解析，支持 QQ 小程序/分享卡片（自动解析卡片里的标题与链接）
+  - 多图默认走合并转发（一张图一个节点），不刷屏
+  - 下载分队列并发 + 单文件 Range 分段下载，可选 aria2c 加速
+  - 每个平台的展示内容、视频时长/体积上限都可单独配置
+  - 视频超过上限只发文字和原链接，不会把几十 MB 的文件塞进消息
+
+  安装后到面板「插件 → R插件」里填 Cookie 即可，XHH_CK（小黑盒）必填，BILI_SESSDATA 影响 B 站画质。
 version: v1.2.3
-author: RrOrange
+author: zhiyu1998
 repo: https://github.com/zhiyu1998/astrbot_plugin_rconsole
 astrbot_version: ">=4.5.0,<5"
+support_platforms:
+  - aiocqhttp
+social_link: https://github.com/zhiyu1998
+tags:
+  - 解析
+  - 视频
+  - 抖音
+  - 哔哩哔哩
+  - 小红书
+  - 微博
+  - 快手
+  - 媒体
