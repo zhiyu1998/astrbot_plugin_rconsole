@@ -1,8 +1,11 @@
 """YouTube 解析（yt-dlp）
 
-YouTube 在多数国内服务器上不可直连，因此需要 HTTP/SOCKS 代理：
-配置 `PROXY_ENABLED` + `PROXY_ADDR` + `PROXY_PORT`（默认 127.0.0.1:7890），
-并把 `youtube` 放进 `PROXY_PLATFORMS`（默认已包含）。
+YouTube 在国内多数网络下不可直连，两种方式二选一：
+  1. 网络本身已经过网关/透明代理（如家里的旁路由 Clash），直接可用；
+  2. 在面板「【代理】代理地址」填 `PROXY_URL`（如 http://192.168.31.100:7890
+     或 socks5://127.0.0.1:7897），并把 `youtube` 放进 `PROXY_PLATFORMS`。
+
+网关节点抖动时会出现「TLS 握手被重置」，取信息与下载都带 3 次重试。
 """
 
 from __future__ import annotations
@@ -11,6 +14,7 @@ import asyncio
 import glob
 import os
 import re
+import time
 from typing import Any, Dict, Optional
 
 import astrbot.api.message_components as Comp
@@ -86,6 +90,17 @@ def _fmt_count(value: Any) -> str:
     return str(number)
 
 
+# ---------------------------------------------------------------- 重试
+
+# 网关/节点抖动时同一条请求会间歇性失败，多试几次基本都能过
+EXTRACT_RETRIES = 5
+DOWNLOAD_RETRIES = 5
+RETRY_BACKOFF = 1.2  # 秒，逐次递增
+
+# YouTube 的 Cookie 文件（Netscape 格式），配了能大幅降低机器人校验
+_COOKIE_FILE = ""
+
+
 # ---------------------------------------------------------------- 错误诊断
 
 # 常见报错特征 → 人话解释
@@ -149,8 +164,13 @@ def diagnose_error(exc: BaseException, proxy: Optional[str]) -> str:
         return "该视频仅频道会员可看，需要 Cookie 才能下载。"
     if "age" in low and "confirm" in low:
         return "该视频有年龄限制，需要登录 Cookie 才能解析。"
+    if "not a bot" in low or "confirm you" in low:
+        return (
+            "YouTube 要求验证「你不是机器人」（同一 IP 请求太频繁）。"
+            "在面板填 YOUTUBE_COOKIES 指向 cookies.txt 可彻底解决；不填就稍等几分钟再试。"
+        )
     if "sign in" in low:
-        return "该视频需要登录才能查看（可在 yt-dlp 侧配置 Cookie）。"
+        return "该视频需要登录才能查看，请在面板填 YOUTUBE_COOKIES（cookies.txt）。"
 
     return ""
 
@@ -176,23 +196,73 @@ async def check_proxy(proxy: Optional[str], timeout: float = 8.0) -> Dict[str, A
         return {"ok": False, "error": str(exc)[:160], "proxy": proxy}
 
 
-def _extract_info(url: str, proxy: Optional[str]) -> Dict[str, Any]:
-    """同步调用 yt-dlp 取元数据（放到线程里跑）"""
-    import yt_dlp
-
+def _base_options(proxy: Optional[str]) -> Dict[str, Any]:
+    """yt-dlp 公共选项"""
     options: Dict[str, Any] = {
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
-        "skip_download": True,
-        "socket_timeout": 25,
         "nocheckcertificate": True,
-        "ignoreerrors": False,
+        "socket_timeout": 15,
+        "retries": 2,
+        "extractor_retries": 1,
     }
     if proxy:
         options["proxy"] = proxy
-    with yt_dlp.YoutubeDL(options) as ydl:
-        return ydl.extract_info(url, download=False) or {}
+    if _COOKIE_FILE and os.path.isfile(_COOKIE_FILE):
+        options["cookiefile"] = _COOKIE_FILE
+    return options
+
+
+# 实测（2026-11）：web / tv / ios / web_safari / mweb 会报
+# "Requested format is not available" 或 "The page needs to be reloaded"，
+# android / android_vr / tv_embedded 可用；YouTube 还会随机弹机器人校验，
+# 所以按可用客户端轮换重试。
+_CLIENT_ATTEMPTS = (
+    ["android"],
+    ["android_vr"],
+    ["tv_embedded"],
+    ["android"],
+    ["android_vr"],
+    None,  # 最后退回 yt-dlp 默认（多客户端）
+)
+
+
+def set_cookie_file(path: str = "") -> str:
+    """设置 yt-dlp 使用的 cookies.txt（Netscape 格式），空串表示不用"""
+    global _COOKIE_FILE
+    _COOKIE_FILE = (path or "").strip()
+    return _COOKIE_FILE
+
+
+def _extract_info(url: str, proxy: Optional[str]) -> Dict[str, Any]:
+    """同步调用 yt-dlp 取元数据（放到线程里跑），按客户端依次重试"""
+    import yt_dlp
+
+    last_error: Optional[BaseException] = None
+    attempts = list(_CLIENT_ATTEMPTS)[: max(1, EXTRACT_RETRIES)]
+    while len(attempts) < EXTRACT_RETRIES:
+        attempts.append(["android"])
+
+    for index, clients in enumerate(attempts, start=1):
+        options = _base_options(proxy)
+        options["skip_download"] = True
+        if clients:
+            options["extractor_args"] = {"youtube": {"player_client": clients}}
+        try:
+            with yt_dlp.YoutubeDL(options) as ydl:
+                return ydl.extract_info(url, download=False) or {}
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            if index >= len(attempts):
+                break
+            wait = RETRY_BACKOFF * index
+            logger.warning(
+                f"[R插件][YouTube] 第 {index} 次取信息失败（client={clients or 'default'}），"
+                f"{wait:.1f}s 后重试：{str(exc).splitlines()[0][:110]}"
+            )
+            time.sleep(wait)
+    raise last_error if last_error else RuntimeError("取信息失败")
 
 
 def _download(url: str, target_dir: str, name: str, proxy: Optional[str], max_height: int) -> str:
@@ -206,24 +276,44 @@ def _download(url: str, target_dir: str, name: str, proxy: Optional[str], max_he
         f"bv*[height<={height}]+ba/b"
     )
     outtmpl = os.path.join(target_dir, f"{name}.%(ext)s")
-    options: Dict[str, Any] = {
-        "format": fmt,
-        "outtmpl": outtmpl,
-        "merge_output_format": "mp4",
-        "quiet": True,
-        "no_warnings": True,
-        "noplaylist": True,
-        "nocheckcertificate": True,
-        "socket_timeout": 30,
-        "retries": 3,
-        "fragment_retries": 3,
-        "concurrent_fragment_downloads": 4,
-        "overwrites": True,
-    }
-    if proxy:
-        options["proxy"] = proxy
-    with yt_dlp.YoutubeDL(options) as ydl:
-        ydl.download([url])
+
+    last_error: Optional[BaseException] = None
+    attempts = [["android"], ["android"], ["android_vr"], None][: max(1, DOWNLOAD_RETRIES)]
+    while len(attempts) < DOWNLOAD_RETRIES:
+        attempts.append(["android"])
+
+    for index, clients in enumerate(attempts, start=1):
+        options = _base_options(proxy)
+        options.update(
+            {
+                "format": fmt,
+                "outtmpl": outtmpl,
+                "merge_output_format": "mp4",
+                "retries": 3,
+                "fragment_retries": 3,
+                "concurrent_fragment_downloads": 4,
+                "overwrites": True,
+            }
+        )
+        if clients:
+            options["extractor_args"] = {"youtube": {"player_client": clients}}
+        try:
+            with yt_dlp.YoutubeDL(options) as ydl:
+                ydl.download([url])
+            last_error = None
+            break
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            if index >= len(attempts):
+                break
+            wait = RETRY_BACKOFF * index
+            logger.warning(
+                f"[R插件][YouTube] 第 {index} 次下载失败（client={clients or 'default'}），"
+                f"{wait:.1f}s 后重试：{str(exc).splitlines()[0][:110]}"
+            )
+            time.sleep(wait)
+    if last_error is not None:
+        raise last_error
 
     for candidate in (os.path.join(target_dir, f"{name}.mp4"),) + tuple(
         glob.glob(os.path.join(target_dir, f"{name}.*"))

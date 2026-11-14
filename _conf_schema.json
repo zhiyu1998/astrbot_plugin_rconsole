@@ -252,6 +252,12 @@
     "default": 0,
     "hint": "0 或 -1 表示不限制（YouTube 简介通常很长，建议设 120 左右）"
   },
+  "YOUTUBE_COOKIES": {
+    "description": "【YouTube】cookies.txt 路径",
+    "type": "string",
+    "default": "",
+    "hint": "可选。填 Netscape 格式 cookies.txt 的绝对路径，能解决「Sign in to confirm you're not a bot」和高画质限制。用浏览器插件（Get cookies.txt）导出 youtube.com 的 Cookie 即可"
+  },
   "DOUYIN_CK": {
     "description": "【抖音】Cookie",
     "type": "string",

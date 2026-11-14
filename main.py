@@ -30,7 +30,7 @@ from .core.common import (
 )
 from .core.douyin import process_douyin_url
 from .core.general import process_general_url
-from .core.youtube import check_proxy, process_youtube_url
+from .core.youtube import check_proxy, process_youtube_url, set_cookie_file
 from .core.miyoushe import process_miyoushe_url
 from .core.weibo import process_weibo_url
 from .core.weishi import process_weishi_url
@@ -150,6 +150,9 @@ class RPlugin(Star):
         self.youtube_display_info = bool(self._cfg("YOUTUBE_DISPLAY_INFO", True))
         self.youtube_desc_len_limit = int(self._cfg("YOUTUBE_DESC_LEN_LIMIT", 0) or 0)
         self.youtube_max_resolution = str(self._cfg("YOUTUBE_MAX_RESOLUTION", "1080P") or "1080P")
+        self.youtube_cookies = set_cookie_file(str(self._cfg("YOUTUBE_COOKIES", "") or ""))
+        if self.youtube_cookies:
+            logger.info(f"[R插件] YouTube Cookie：{self.youtube_cookies}")
 
         # 视频/图片暂存目录（对应 R 插件的「视频暂存位置」），留空用插件默认目录
         set_temp_dir(str(self._cfg("TEMP_PATH", "") or ""))
