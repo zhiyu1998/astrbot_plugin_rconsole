@@ -87,6 +87,56 @@ def _sem() -> asyncio.Semaphore:
     return _download_sem
 
 
+# ---------------------------------------------------------------- 限制说明文案
+
+DIVIDING_LINE = "\n━━━{}━━━"
+
+
+def _js_fixed(value: float, digits: int) -> str:
+    """模拟 JS 的 Number.toFixed（四舍五入到指定小数位）"""
+    try:
+        return f"{float(value):.{digits}f}"
+    except (TypeError, ValueError):
+        return "0"
+
+
+def js_minutes(seconds: float, digits: int = 2) -> str:
+    r"""
+    把秒换成分钟字符串，等价于 JS：
+        (s / 60).toFixed(digits).replace(/\.00$/, '')
+    """
+    text = _js_fixed((seconds or 0) / 60, digits)
+    return text[:-3] if text.endswith(".00") else text
+
+
+def limit_notice(duration_seconds: float, limit_seconds: float, kind: str = "视频") -> str:
+    """
+    生成与 Node 版一致的超时长提示。
+
+        ━━━限制说明━━━
+        当前视频时长约：16分钟，
+        大于管理员设置的最大时长 8 分钟！
+    """
+    current = js_minutes(duration_seconds, 0)          # 原版 B 站用 toFixed(0)
+    limit = js_minutes(limit_seconds, 2)
+    return (
+        f"{DIVIDING_LINE.replace('{}', '限制说明')}"
+        f"\n当前{kind}时长约：{current}分钟，"
+        f"\n大于管理员设置的最大时长 {limit} 分钟！"
+    )
+
+
+def limit_notice_precise(duration_seconds: float, limit_seconds: float, kind: str = "视频") -> str:
+    """抖音原版用 toFixed(2)+去尾 .00 显示当前时长，这里单独给一个"""
+    current = js_minutes(duration_seconds, 2)
+    limit = js_minutes(limit_seconds, 2)
+    return (
+        f"{DIVIDING_LINE.replace('{}', '限制说明')}"
+        f"\n当前{kind}时长约：{current} 分钟，"
+        f"\n大于管理员设置的最大时长 {limit} 分钟！"
+    )
+
+
 # ---------------------------------------------------------------- 代理
 
 _PROXY_URL = ""

@@ -18,6 +18,7 @@ from astrbot.api import logger
 
 from .common import (
     cache_dir,
+    limit_notice_precise,
     local_image,
     release_video,
     video_components,
@@ -217,10 +218,7 @@ async def process_youtube_url(
     header = "\n".join(lines)
     if duration and duration > video_duration_maximum:
         yield event.chain_result(prefix + [
-            Comp.Plain(
-                f"{header}\n---------\n⚠️ 视频时长 {_fmt_duration(duration)}，超过设置上限 "
-                f"{_fmt_duration(video_duration_maximum)}，已跳过下载"
-            )
+            Comp.Plain(f"{header}\n{limit_notice_precise(duration, video_duration_maximum)}")
         ])
         return
 

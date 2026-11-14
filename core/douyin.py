@@ -40,6 +40,7 @@ from .common import (
     fetch_text,
     get_message_text,
     image_send_results,
+    limit_notice_precise,
     release_file,
     release_video,
     resolve_redirect,
@@ -448,8 +449,8 @@ async def process_douyin_url(
     header_text = f"{identify_prefix}抖音，{author}\n📝 简介：{desc}"
 
     if video_duration_maximum and duration_s > video_duration_maximum:
-        limit_text = header_text + (
-            f"\n\n⚠️ 当前视频时长 {duration_s} 秒，超过管理员设置的最大时长 {video_duration_maximum} 秒，已跳过视频发送"
+        limit_text = header_text + "\n" + limit_notice_precise(
+            duration_s, video_duration_maximum
         )
         yield await cover_text_result(
             event,

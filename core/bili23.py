@@ -19,6 +19,7 @@ from .common import (
     cache_dir,
     delete_boring_characters,
     delete_file,
+    limit_notice,
     local_image,
     release_video,
     remove_files,
@@ -546,8 +547,7 @@ async def process_bilibili_url(
         yield event.chain_result(prefix_comps + [Comp.Plain(info_text)])
     else:
         yield event.chain_result(prefix_comps + [
-            Comp.Plain(
-                f"{info_text}\n---------\n⚠️ 当前视频时长 {video_duration // 60} 分钟，超过管理员设置的最长时间 {video_duration_maximum // 60} 分钟！\n已跳过下载；需要下载就调大 BILI_DURATION / VIDEO_DURATION_MAXIMUM")
+            Comp.Plain(f"{info_text}{limit_notice(video_duration, video_duration_maximum)}")
         ])
         # 超时长不下载：省带宽，也避免把大文件塞进消息通道
         return
