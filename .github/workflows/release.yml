@@ -53,9 +53,10 @@ jobs:
             exit 0
           fi
 
-          # 优先用附注 tag 的正文当 release notes
+          # 优先用附注 tag 的完整正文当 release notes
+          # 注意用 %(contents) 而不是 %(contents:body)：后者会把首个段落（标题行）丢掉
           NOTES_FILE="$(mktemp)"
-          git tag -l --format='%(contents:body)' "$TAG" > "$NOTES_FILE"
+          git tag -l --format='%(contents)' "$TAG" > "$NOTES_FILE"
           if [ ! -s "$NOTES_FILE" ] || [ "$(tr -d '[:space:]' < "$NOTES_FILE" | wc -c)" -lt 10 ]; then
             git tag -l --format='%(contents:subject)' "$TAG" > "$NOTES_FILE"
           fi
