@@ -258,6 +258,30 @@
     "default": "",
     "hint": "可选。填 Netscape 格式 cookies.txt 的绝对路径，能解决「Sign in to confirm you're not a bot」和高画质限制。用浏览器插件（Get cookies.txt）导出 youtube.com 的 Cookie 即可"
   },
+  "WXCHANNEL_COOKIE": {
+    "description": "【微信视频号】腾讯元宝 Cookie",
+    "type": "string",
+    "default": "",
+    "hint": "必填。浏览器登录 https://yuanbao.tencent.com 后 F12 → Network → 任意请求 → Request Headers → 复制 Cookie。只需要元宝 Cookie，不用微信登录",
+    "obvious_hint": true
+  },
+  "WXCHANNEL_DISPLAY_COVER": {
+    "description": "【微信视频号】显示封面",
+    "type": "bool",
+    "default": true
+  },
+  "WXCHANNEL_DISPLAY_STATS": {
+    "description": "【微信视频号】显示互动数据",
+    "type": "bool",
+    "default": true,
+    "hint": "点赞 / 喜欢 / 转发 / 评论"
+  },
+  "WXCHANNEL_DESC_LEN_LIMIT": {
+    "description": "【微信视频号】简介截断长度",
+    "type": "int",
+    "default": 200,
+    "hint": "0 或 -1 表示不限制"
+  },
   "DOUYIN_CK": {
     "description": "【抖音】Cookie",
     "type": "string",

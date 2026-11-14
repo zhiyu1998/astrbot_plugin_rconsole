@@ -30,6 +30,7 @@ from .core.common import (
 )
 from .core.douyin import process_douyin_url
 from .core.general import process_general_url
+from .core.wxchannel import process_wxchannel_url
 from .core.youtube import check_proxy, process_youtube_url, set_cookie_file
 from .core.miyoushe import process_miyoushe_url
 from .core.weibo import process_weibo_url
@@ -49,6 +50,7 @@ PLATFORM_ALIASES = {
     "xiaoheihe": "小黑盒",
     "weishi": "微视",
     "youtube": "YouTube",
+    "wxchannel": "微信视频号",
 }
 
 # 面板里显示的是中文标签，代码里用 auto/hevc/av1/avc（兼容直接填英文）
@@ -150,6 +152,12 @@ class RPlugin(Star):
         self.youtube_display_info = bool(self._cfg("YOUTUBE_DISPLAY_INFO", True))
         self.youtube_desc_len_limit = int(self._cfg("YOUTUBE_DESC_LEN_LIMIT", 0) or 0)
         self.youtube_max_resolution = str(self._cfg("YOUTUBE_MAX_RESOLUTION", "1080P") or "1080P")
+
+        # 微信视频号（走腾讯元宝接口，只需元宝 Web 端 Cookie）
+        self.wxchannel_cookie = str(self._cfg("WXCHANNEL_COOKIE", "") or "")
+        self.wxchannel_display_cover = bool(self._cfg("WXCHANNEL_DISPLAY_COVER", True))
+        self.wxchannel_display_stats = bool(self._cfg("WXCHANNEL_DISPLAY_STATS", True))
+        self.wxchannel_desc_len_limit = int(self._cfg("WXCHANNEL_DESC_LEN_LIMIT", 200) or 0)
         self.youtube_cookies = set_cookie_file(str(self._cfg("YOUTUBE_COOKIES", "") or ""))
         if self.youtube_cookies:
             logger.info(f"[R插件] YouTube Cookie：{self.youtube_cookies}")
@@ -274,6 +282,23 @@ class RPlugin(Star):
             display_info=self.youtube_display_info,
             desc_len_limit=self.youtube_desc_len_limit,
             max_resolution=self.youtube_max_resolution,
+        ):
+            yield result
+
+    # ------------------------------------------------------------ 微信视频号
+
+    @filter.regex(r".*weixin\.qq\.com/sph/.*")
+    async def wxchannel(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
+        if not self._enabled("wxchannel"):
+            return
+        async for result in process_wxchannel_url(
+            event,
+            cookie=self.wxchannel_cookie,
+            identify_prefix=self.identify_prefix,
+            display_cover=self.wxchannel_display_cover,
+            display_stats=self.wxchannel_display_stats,
+            desc_len_limit=self.wxchannel_desc_len_limit,
+            video_size_limit_mb=self.video_size_limit_mb,
         ):
             yield result
 
