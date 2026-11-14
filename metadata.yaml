@@ -32,7 +32,7 @@ desc: |
   - 视频超过上限只发文字和原链接，不会把几十 MB 的文件塞进消息
 
   安装后到面板「插件 → R插件」里填 Cookie 即可，XHH_CK（小黑盒）必填，BILI_SESSDATA 影响 B 站画质。
-version: v1.2.4
+version: v1.2.5
 author: zhiyu1998
 repo: https://github.com/zhiyu1998/astrbot_plugin_rconsole
 astrbot_version: ">=4.5.0,<5"
