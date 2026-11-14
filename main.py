@@ -18,6 +18,7 @@ from bilibili_api import Credential
 
 from .core.acfun import process_acfun_url
 from .core.bili23 import process_bilibili_url
+from .core import card as card_parser
 from .core.common import set_aria2, set_download_limits, set_file_service, set_temp_dir
 from .core.douyin import process_douyin_url
 from .core.general import process_general_url
@@ -130,6 +131,19 @@ class RPlugin(Star):
         # 视频/图片暂存目录（对应 R 插件的「视频暂存位置」），留空用插件默认目录
         set_temp_dir(str(self._cfg("TEMP_PATH", "") or ""))
 
+        # 小程序 / 分享卡片解析：把 OneBot json 段的内容注入 message_str，
+        # 否则卡片消息的 message_str 为空，正则路由根本进不来
+        self.card_parse_enabled = bool(self._cfg("CARD_PARSE_ENABLED", True))
+        self._card_patch_state = {}
+        if self.card_parse_enabled:
+            self._card_patch_state = card_parser.install()
+            logger.info(
+                "[R插件] 卡片解析补丁：适配器={} 日志大纲={}".format(
+                    "OK" if self._card_patch_state.get("adapter") else "FAIL",
+                    "OK" if self._card_patch_state.get("outline") else "FAIL",
+                )
+            )
+
     # ------------------------------------------------------------ 配置读取
 
     def _cfg(self, key: str, default: Any = None) -> Any:
@@ -179,6 +193,8 @@ class RPlugin(Star):
         logger.info(f"[R插件] 已加载，解析平台：{'、'.join(PLATFORM_ALIASES.values())}")
 
     async def terminate(self):
+        if self.card_parse_enabled:
+            card_parser.uninstall()
         logger.info("[R插件] 已卸载")
 
     # ------------------------------------------------------------ 抖音

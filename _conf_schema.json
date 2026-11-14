@@ -65,6 +65,13 @@
     "default": "aria2c",
     "hint": "默认从 PATH 找；也可以填绝对路径，例如 /usr/bin/aria2c"
   },
+  "CARD_PARSE_ENABLED": {
+    "description": "【全局】解析 QQ 小程序/分享卡片",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后会把卡片里的标题/简介/链接解析进消息文本，否则卡片消息只有 [ComponentType.Json]，正则路由进不来；B站/小红书等分享卡片能直接解析。关掉后卡片消息不再触发解析",
+    "obvious_hint": true
+  },
   "TEMP_PATH": {
     "description": "【全局】视频/图片暂存目录",
     "type": "string",

@@ -103,6 +103,7 @@ Cookie 获取：浏览器登录对应网站 → `F12` → **Network** → 随便
 | B 站只能解析到 360P / 480P | `BILI_SESSDATA` 失效（日志会打「账号未登录 -101」），重新获取；4K/8K/HDR/杜比还需要大会员 |
 | 视频提示 `ENOENT: no such file or directory` | NapCat 在容器 / 另一台机器上读不到宿主机路径。插件默认已改成 base64 发送；视频较多时建议在 AstrBot 配置里设置 `callback_api_base`，改走文件服务 |
 | 小黑盒提示需要验证码 | 优先用 App 分享链接，并更新 `XHH_CK` |
+| 群里发分享卡片没反应，日志只有 `[ComponentType.Json]` | 卡片解析被关了，检查 `CARD_PARSE_ENABLED` 是否为 true；开启后会打印「卡片解析补丁：适配器=OK」 |
 | AcFun 解析失败 | 大概率没装 `ffmpeg`，见上面「安装 ffmpeg」 |
 | 图片/视频发得很慢 | 调小 `DOWNLOAD_CONCURRENCY`（同时任务数）与 `DOWNLOAD_THREADS`（单文件分段数） |
 
@@ -125,6 +126,10 @@ Cookie 获取：浏览器登录对应网站 → `F12` → **Network** → 随便
 
 > ✅ 可用　⚠️ 依赖外部接口　❌ 未迁移
 
+插件还会把 **QQ 小程序 / 分享卡片**（OneBot `json` 消息段）解析成可读文本，所以从 QQ 直接分享的
+B站、小红书、抖音等卡片也能识别——否则这类消息在 AstrBot 里只有一个 `[ComponentType.Json]`，
+正则路由根本进不来。对应配置项 `CARD_PARSE_ENABLED`。
+
 ## 配置项
 
 ### 全局配置
@@ -140,6 +145,7 @@ Cookie 获取：浏览器登录对应网站 → `F12` → **Network** → 随便
 | `DOWNLOAD_CONCURRENCY` | `2` | 同时下载任务数（队列长度），服务器弱可调 1 |
 | `DOWNLOAD_THREADS` | `4` | 单文件 Range 分段并发数（>5MB 生效），0/1 = 不分段 |
 | `TEMP_PATH` | 空 | 视频/图片暂存目录，留空 = `data/astrbot_plugin_rconsole/temp` |
+| `CARD_PARSE_ENABLED` | `true` | 解析 QQ 小程序/分享卡片（默认开启，关掉后卡片消息只有 `[ComponentType.Json]`） |
 | `DOWNLOADS_USE_ARIA2` | `false` | 用 aria2c 下载视频，失败自动回退内置下载 |
 | `ARIA2C_PATH` | `aria2c` | aria2c 可执行文件路径（默认从 PATH 找） |
 | `DISABLED_PLATFORMS` | `[]` | 禁用的平台：`douyin` / `bilibili` / `kuaishou` / `weibo` / `acfun` / `xhs` / `miyoushe` / `xiaoheihe` / `weishi` |
