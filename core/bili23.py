@@ -518,7 +518,7 @@ async def process_bilibili_url(
     # 删除特殊字符
     video_title = delete_boring_characters(video_title)
     # 按开关拼装信息：封面 / 统计 / 简介 / 在线人数
-    info_lines = [f"\n识别：B站，{video_title}"]
+    info_lines = [f"识别：B站，{video_title}"]
     if display_info:
         stats_line = extra_bili_info(video_info)
         if stats_line:

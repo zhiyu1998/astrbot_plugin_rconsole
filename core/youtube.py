@@ -188,7 +188,7 @@ async def process_youtube_url(
         if thumbs:
             thumbnail = thumbs[-1].get("url", "")
 
-    lines = [f"\n识别：YouTube，{title}"]
+    lines = [f"识别：YouTube，{title}"]
     if display_info:
         stats = []
         if uploader:
