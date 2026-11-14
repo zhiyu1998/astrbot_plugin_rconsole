@@ -13,8 +13,11 @@
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-2f6f5e" alt="AGPL-3.0 License"></a>
 </p>
 专门为朋友们写的AstrBot插件（AstrBot_R插件的迁移版本），专注图片视频分享、生活、健康和学习的插件！
-
-<img src="https://cdn.z.wiki/autoupload/20240819/Zn2g/github-contribution-grid-snake.svg">
+<picture>
+<source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/zhiyu1998/astrbot_plugin_rconsole/output/github-snake-dark.svg">
+<source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/zhiyu1998/astrbot_plugin_rconsole/output/github-snake.svg">
+<img alt="github-snake" src="https://raw.githubusercontent.com/zhiyu1998/astrbot_plugin_rconsole/output/github-snake.svg">
+</picture>
 </div>
 
 ## 安装部署
