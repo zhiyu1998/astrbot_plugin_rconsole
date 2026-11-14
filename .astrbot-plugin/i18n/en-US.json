@@ -1,0 +1,11 @@
+{
+  "views": {
+    "settings": {
+      "title": "R Plugin Settings",
+      "description": "Configure every parser option in a form, and inspect proxy, dependencies and temp directory status.",
+      "heading": "R Plugin · Settings",
+      "save": "Save & apply",
+      "reset": "Discard changes"
+    }
+  }
+}

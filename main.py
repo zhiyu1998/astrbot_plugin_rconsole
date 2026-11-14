@@ -30,6 +30,7 @@ from .core.common import (
 )
 from .core.douyin import process_douyin_url
 from .core.general import process_general_url
+from .core.webview import register_view_apis
 from .core.wxchannel import process_wxchannel_url
 from .core.youtube import check_proxy, process_youtube_url, set_cookie_file
 from .core.miyoushe import process_miyoushe_url
@@ -39,6 +40,7 @@ from .core.xhs import process_xiaohongshu_url
 from .core.xiaoheihe import process_xiaoheihe_url
 
 PLUGIN_NAME = "astrbot_plugin_rconsole"
+VERSION = "1.2.7"
 PLATFORM_ALIASES = {
     "douyin": "抖音",
     "bilibili": "哔哩哔哩",
@@ -70,13 +72,40 @@ _CODEC_ALIAS = {
     PLUGIN_NAME,
     "RrOrange",
     "R插件迁移版：抖音/B站/快手/微博/AcFun/小红书/米游社/小黑盒/微视 链接解析",
-    "1.2.6",
+    "1.2.7",
 )
 class RPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.config = config
 
+        self.version = VERSION
+        self.platform_labels = dict(PLATFORM_ALIASES)
+        self.apply_runtime_settings()
+
+        # 可视化视图（views/settings）后端 API
+        try:
+            register_view_apis(context, self, PLUGIN_NAME)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"[R插件] 注册视图 API 失败: {exc}")
+
+        # 小程序 / 分享卡片解析：把 OneBot json 段的内容注入 message_str，
+        # 否则卡片消息的 message_str 为空，正则路由根本进不来
+        self.card_parse_enabled = bool(self._cfg("CARD_PARSE_ENABLED", True))
+        self._card_patch_state = {}
+        if self.card_parse_enabled:
+            self._card_patch_state = card_parser.install()
+            logger.info(
+                "[R插件] 卡片解析补丁：适配器={} 日志大纲={}".format(
+                    "OK" if self._card_patch_state.get("adapter") else "FAIL",
+                    "OK" if self._card_patch_state.get("outline") else "FAIL",
+                )
+            )
+
+    # ------------------------------------------------------------ 配置热加载
+
+    def apply_runtime_settings(self) -> list:
+        """从 self.config 读取全部配置并应用到运行时（保存后可直接调用）"""
         self.credential = Credential(sessdata=str(self._cfg("BILI_SESSDATA", "")))
         self.video_duration_maximum = int(self._cfg("VIDEO_DURATION_MAXIMUM", 480) or 480)
         self.video_size_limit_mb = int(self._cfg("VIDEO_SIZE_LIMIT_MB", 30) or 30)
@@ -165,18 +194,7 @@ class RPlugin(Star):
         # 视频/图片暂存目录（对应 R 插件的「视频暂存位置」），留空用插件默认目录
         set_temp_dir(str(self._cfg("TEMP_PATH", "") or ""))
 
-        # 小程序 / 分享卡片解析：把 OneBot json 段的内容注入 message_str，
-        # 否则卡片消息的 message_str 为空，正则路由根本进不来
-        self.card_parse_enabled = bool(self._cfg("CARD_PARSE_ENABLED", True))
-        self._card_patch_state = {}
-        if self.card_parse_enabled:
-            self._card_patch_state = card_parser.install()
-            logger.info(
-                "[R插件] 卡片解析补丁：适配器={} 日志大纲={}".format(
-                    "OK" if self._card_patch_state.get("adapter") else "FAIL",
-                    "OK" if self._card_patch_state.get("outline") else "FAIL",
-                )
-            )
+        return ["基础参数", "平台展示", "下载与代理", "暂存目录"]
 
     # ------------------------------------------------------------ 配置读取
 

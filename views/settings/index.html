@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>R插件 设置</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="hero">
+        <div class="brand">
+          <div class="logo">R</div>
+          <div class="brand-text">
+            <h1>R插件 · 设置</h1>
+            <p>抖音 / B站 / 快手 / 微博 / AcFun / 小红书 / 米游社 / 小黑盒 / 微视 / YouTube / 视频号</p>
+          </div>
+        </div>
+        <div class="chips" id="heroChips"></div>
+      </header>
+
+      <nav class="tabs" role="tablist">
+        <button class="tab active" data-tab="settings" role="tab">配置项</button>
+        <button class="tab" data-tab="status" role="tab">运行状态</button>
+        <div class="tab-spacer"></div>
+        <span class="ver" id="versionTag"></span>
+      </nav>
+
+      <main>
+        <section id="tab-settings" class="panel">
+          <div class="toolbar">
+            <input id="search" type="search" placeholder="搜索配置项，例如 代理 / Cookie / 画质…" />
+            <span class="count" id="fieldCount"></span>
+          </div>
+          <div id="groups" class="groups">
+            <div class="skeleton">正在加载配置…</div>
+          </div>
+          <div class="savebar">
+            <span id="saveHint" class="hint"></span>
+            <button id="resetBtn" class="btn ghost" type="button">放弃修改</button>
+            <button id="saveBtn" class="btn primary" type="button">保存并生效</button>
+          </div>
+        </section>
+
+        <section id="tab-status" class="panel hidden">
+          <div id="statusGrid" class="grid">
+            <div class="skeleton">正在读取状态…</div>
+          </div>
+          <div class="actions">
+            <button class="btn" type="button" data-probe="proxy">测试代理 → YouTube</button>
+            <button class="btn" type="button" data-probe="temp">测试暂存目录</button>
+            <button class="btn ghost" type="button" id="refreshStatus">刷新状态</button>
+          </div>
+        </section>
+      </main>
+
+      <div id="toast" class="toast"></div>
+    </div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

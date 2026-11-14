@@ -1,0 +1,590 @@
+/* R插件设置页 —— 配色：Crail #C15F3C / Cloudy #B1ADA1 / Pampas #F4F3EE / White #FFFFFF */
+
+:root {
+  --crail: #c15f3c;
+  --crail-dark: #a34e30;
+  --crail-soft: #e8cfc4;
+  --cloudy: #b1ada1;
+  --pampas: #f4f3ee;
+  --white: #ffffff;
+
+  --bg: #f4f3ee;
+  --panel: #ffffff;
+  --text: #33302b;
+  --muted: #8a857c;
+  --border: #e4e1d8;
+  --shadow: 0 1px 2px rgba(51, 48, 43, 0.05), 0 8px 24px rgba(51, 48, 43, 0.06);
+}
+
+[data-theme="dark"] {
+  --bg: #2a2622;
+  --panel: #34302b;
+  --text: #f4f3ee;
+  --muted: #b1ada1;
+  --border: #46403a;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 20px 20px 96px;
+}
+
+/* ---------- 头部 ---------- */
+.hero {
+  background: linear-gradient(135deg, var(--crail) 0%, var(--crail-dark) 100%);
+  border-radius: 16px;
+  padding: 20px 22px;
+  color: #fff;
+  box-shadow: var(--shadow);
+  position: relative;
+  overflow: hidden;
+}
+
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: auto -40px -70px auto;
+  width: 230px;
+  height: 230px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.22), transparent 65%);
+  pointer-events: none;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.logo {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  background: var(--pampas);
+  color: var(--crail);
+  font-weight: 800;
+  font-size: 22px;
+  display: grid;
+  place-items: center;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.08);
+}
+
+.brand-text h1 {
+  margin: 0;
+  font-size: 19px;
+  letter-spacing: 0.3px;
+}
+
+.brand-text p {
+  margin: 2px 0 0;
+  font-size: 12px;
+  opacity: 0.88;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.chip {
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  white-space: nowrap;
+}
+
+.chip.ok {
+  background: var(--pampas);
+  color: var(--crail-dark);
+  border-color: transparent;
+  font-weight: 700;
+}
+
+.chip.warn {
+  background: #7a2d18;
+  border-color: transparent;
+  font-weight: 700;
+}
+
+/* ---------- 标签页 ---------- */
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 18px 0 12px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+
+.tab {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  padding: 8px 14px;
+  border-radius: 10px 10px 0 0;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.15s;
+}
+
+.tab:hover {
+  color: var(--crail);
+}
+
+.tab.active {
+  color: #fff;
+  background: var(--crail);
+}
+
+.tab-spacer {
+  flex: 1;
+}
+
+.ver {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ---------- 工具条 ---------- */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+#search {
+  flex: 1;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+#search:focus {
+  border-color: var(--crail);
+  box-shadow: 0 0 0 3px rgba(193, 95, 60, 0.16);
+}
+
+.count {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ---------- 分组卡片 ---------- */
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.group {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.group-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: linear-gradient(90deg, rgba(193, 95, 60, 0.1), transparent);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+}
+
+.group-head h2 {
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 0.3px;
+}
+
+.group-head .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--crail);
+}
+
+.group-head .gcount {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.group-body {
+  padding: 6px 16px 14px;
+}
+
+.group.collapsed .group-body {
+  display: none;
+}
+
+/* ---------- 字段 ---------- */
+.field {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 14px;
+  padding: 11px 0;
+  border-bottom: 1px dashed var(--border);
+  align-items: start;
+}
+
+.field:last-child {
+  border-bottom: 0;
+}
+
+.field-label {
+  padding-top: 6px;
+}
+
+.field-label .k {
+  font-weight: 600;
+  font-size: 13px;
+  display: block;
+}
+
+.field-label .key {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--cloudy);
+}
+
+.field-label .hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.field-control {
+  min-width: 0;
+}
+
+input[type="text"],
+input[type="password"],
+input[type="number"],
+select,
+textarea {
+  width: 100%;
+  padding: 8px 11px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--crail);
+  box-shadow: 0 0 0 3px rgba(193, 95, 60, 0.14);
+}
+
+textarea {
+  min-height: 76px;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+}
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.switch input {
+  display: none;
+}
+
+.track {
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--cloudy);
+  position: relative;
+  transition: background 0.18s;
+  flex: none;
+}
+
+.track::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 0.18s;
+}
+
+.switch input:checked + .track {
+  background: var(--crail);
+}
+
+.switch input:checked + .track::after {
+  transform: translateX(18px);
+}
+
+.switch .state {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.secret-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.badge-set {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(193, 95, 60, 0.12);
+  color: var(--crail-dark);
+  white-space: nowrap;
+  font-weight: 700;
+}
+
+/* ---------- 保存条 ---------- */
+.savebar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-end;
+  padding: 12px 22px;
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--border);
+  z-index: 20;
+}
+
+.savebar .hint {
+  margin-right: auto;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.btn {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  padding: 9px 16px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn:hover {
+  border-color: var(--crail);
+  color: var(--crail);
+}
+
+.btn.primary {
+  background: var(--crail);
+  border-color: var(--crail);
+  color: #fff;
+}
+
+.btn.primary:hover {
+  background: var(--crail-dark);
+  border-color: var(--crail-dark);
+  color: #fff;
+}
+
+.btn.primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn.ghost {
+  background: transparent;
+}
+
+/* ---------- 状态页 ---------- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 14px;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: var(--shadow);
+}
+
+.card h3 {
+  margin: 0 0 10px;
+  font-size: 12.5px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  font-weight: 700;
+}
+
+.kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.kv span:first-child {
+  color: var(--muted);
+}
+
+.kv code,
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.ok-text {
+  color: var(--crail-dark);
+  font-weight: 700;
+}
+
+.bad-text {
+  color: #b03a22;
+  font-weight: 700;
+}
+
+.pill {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.pill.on {
+  background: rgba(193, 95, 60, 0.14);
+  color: var(--crail-dark);
+}
+
+.pill.off {
+  background: rgba(177, 173, 161, 0.28);
+  color: #6f6a60;
+}
+
+[data-theme="dark"] .pill.on {
+  background: rgba(193, 95, 60, 0.32);
+  color: #f0c6b6;
+}
+
+[data-theme="dark"] .pill.off {
+  background: rgba(177, 173, 161, 0.2);
+  color: var(--cloudy);
+}
+
+[data-theme="dark"] .ok-text {
+  color: #e3a086;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.skeleton {
+  padding: 22px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 13px;
+}
+
+/* ---------- Toast ---------- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 84px;
+  transform: translate(-50%, 20px);
+  background: #3b322b;
+  color: var(--pampas);
+  padding: 11px 20px;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.22s;
+  z-index: 50;
+  max-width: 80vw;
+}
+
+.toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.toast.error {
+  background: #a33b23;
+  color: #fff;
+}
+
+@media (max-width: 720px) {
+  .field {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .field-label {
+    padding-top: 0;
+  }
+}
