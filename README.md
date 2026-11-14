@@ -6,6 +6,18 @@
 
 <div align="center">
     <h1>astrbot_plugin_rconsole</h1>
+
+    <p>
+      <a href="https://github.com/zhiyu1998/astrbot_plugin_rconsole/releases"><img src="https://img.shields.io/badge/version-v1.2.6-2f6f5e" alt="Version v1.2.6"></a>
+      <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-%3E%3D3.10-3776ab" alt="Python 3.10+"></a>
+      <a href="https://astrbot.app/"><img src="https://img.shields.io/badge/AstrBot-plugin-4c78a8" alt="AstrBot Plugin"></a>
+      <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2f6f5e" alt="MIT License"></a>
+    </p>
+
+    <p>
+      <img src="https://count.getloli.com/get/@zhiyu1998-astrbot_plugin_rconsole?theme=moebooru" alt="访问次数">
+    </p>
+
     专门为朋友们写的AstrBot插件（AstrBot_R插件的迁移版本），专注图片视频分享、生活、健康和学习的插件！
     <img src="https://cdn.z.wiki/autoupload/20240819/Zn2g/github-contribution-grid-snake.svg">
 </div>
@@ -121,3 +133,26 @@ B站、小红书、抖音等卡片也能识别——否则这类消息在 AstrBo
 正则路由根本进不来。对应配置项 `CARD_PARSE_ENABLED`。
 
 ## 待完善...
+
+## 致谢
+
+本插件是 [rconsole-plugin](https://github.com/zhiyu1998/rconsole-plugin)（Yunzai 版 R 插件）的 AstrBot 迁移版本，
+解析逻辑、配置项设计与文案均来自原项目，感谢原作者与**一起参与开发的团队**，没有他们的工作就没有这个插件。
+
+同时也感谢这些开源项目：
+
+- [ltaoo/wx_channels_download](https://github.com/ltaoo/wx_channels_download) —— 微信视频号解析思路与接口参考
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) —— YouTube 解析
+- [bilibili-api-python](https://github.com/Nemo2011/bilibili-api) —— B 站解析
+- [AstrBot](https://github.com/AstrBotDevs/AstrBot) —— 插件运行框架
+
+## 免责声明
+
+本项目仅提供公开链接的技术解析与消息展示能力，不提供内容托管、批量抓取或访问控制绕过服务。使用者应遵守所在地法律法规、AstrBot 使用规范、目标平台服务条款及内容版权要求，并妥善保管 Cookie、账号和协议端配置。
+
+解析结果来自第三方平台，本项目不保证其准确性、完整性或持续可用性。各平台名称和商标归其权利人所有；本项目与 AstrBot 官方及各内容平台均无隶属、授权或背书关系。
+
+## 许可证
+
+本项目采用 MIT License 发布，软件按许可证约定"按原样"提供且不附带担保。详见 [LICENSE](LICENSE)。
+
