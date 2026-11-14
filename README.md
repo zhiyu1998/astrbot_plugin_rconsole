@@ -10,10 +10,10 @@
 <a href="https://github.com/zhiyu1998/astrbot_plugin_rconsole/releases"><img src="https://img.shields.io/badge/version-v1.2.6-2f6f5e" alt="Version v1.2.6"></a>
 <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-%3E%3D3.10-3776ab" alt="Python 3.10+"></a>
 <a href="https://astrbot.app/"><img src="https://img.shields.io/badge/AstrBot-plugin-4c78a8" alt="AstrBot Plugin"></a>
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2f6f5e" alt="MIT License"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-2f6f5e" alt="AGPL-3.0 License"></a>
 </p>
 <p>
-<img src="https://count.getloli.com/get/@zhiyu1998-astrbot_plugin_rconsole?theme=moebooru" alt="访问次数">
+<img src="https://cdn.z.wiki/autoupload/20240819/Zn2g/github-contribution-grid-snake.svg">
 </p>
 专门为朋友们写的AstrBot插件（AstrBot_R插件的迁移版本），专注图片视频分享、生活、健康和学习的插件！
 <img src="https://cdn.z.wiki/autoupload/20240819/Zn2g/github-contribution-grid-snake.svg">
@@ -151,5 +151,8 @@ B站、小红书、抖音等卡片也能识别——否则这类消息在 AstrBo
 
 ## 许可证
 
-本项目采用 MIT License 发布，软件按许可证约定"按原样"提供且不附带担保。详见 [LICENSE](LICENSE)。
+本项目采用 **GNU Affero General Public License v3.0（AGPL-3.0）** 发布，软件按许可证约定“按原样”提供且不附带担保。
+
+AGPL-3.0 要求：基于本项目的修改版本、以及通过网络向用户提供服务的衍生作品，也需以同一许可证开源。
+完整条款见 [LICENSE](LICENSE)。
 
