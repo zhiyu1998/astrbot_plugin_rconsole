@@ -19,9 +19,17 @@ from bilibili_api import Credential
 from .core.acfun import process_acfun_url
 from .core.bili23 import process_bilibili_url
 from .core import card as card_parser
-from .core.common import set_aria2, set_download_limits, set_file_service, set_temp_dir
+from .core.common import (
+    proxy_for,
+    set_aria2,
+    set_download_limits,
+    set_file_service,
+    set_proxy,
+    set_temp_dir,
+)
 from .core.douyin import process_douyin_url
 from .core.general import process_general_url
+from .core.youtube import process_youtube_url
 from .core.miyoushe import process_miyoushe_url
 from .core.weibo import process_weibo_url
 from .core.weishi import process_weishi_url
@@ -39,6 +47,7 @@ PLATFORM_ALIASES = {
     "miyoushe": "米游社",
     "xiaoheihe": "小黑盒",
     "weishi": "微视",
+    "youtube": "YouTube",
 }
 
 # 面板里显示的是中文标签，代码里用 auto/hevc/av1/avc（兼容直接填英文）
@@ -58,7 +67,7 @@ _CODEC_ALIAS = {
     PLUGIN_NAME,
     "RrOrange",
     "R插件迁移版：抖音/B站/快手/微博/AcFun/小红书/米游社/小黑盒/微视 链接解析",
-    "1.2.3",
+    "1.2.4",
 )
 class RPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -127,6 +136,19 @@ class RPlugin(Star):
         self.aria2c_path = str(self._cfg("ARIA2C_PATH", "aria2c") or "aria2c")
         set_aria2(self.use_aria2, self.aria2c_path)
         self.bbdown_aria2c = bool(self._cfg("BILI_BBDOWN_ARIA2C", False))
+
+        # 代理（YouTube 等需要魔法的平台）：填一个完整地址，留空即直连
+        self.proxy_platforms = self._list_cfg("PROXY_PLATFORMS", ["youtube"])
+        self.proxy_url = set_proxy(str(self._cfg("PROXY_URL", "") or ""), self.proxy_platforms)
+        if self.proxy_url:
+            logger.info(f"[R插件] 代理已启用：{self.proxy_url} → {self.proxy_platforms or '全部平台'}")
+
+        # YouTube
+        self.youtube_duration = int(self._cfg("YOUTUBE_DURATION", 0) or 0) or self.video_duration_maximum
+        self.youtube_display_cover = bool(self._cfg("YOUTUBE_DISPLAY_COVER", True))
+        self.youtube_display_info = bool(self._cfg("YOUTUBE_DISPLAY_INFO", True))
+        self.youtube_desc_len_limit = int(self._cfg("YOUTUBE_DESC_LEN_LIMIT", 0) or 0)
+        self.youtube_max_resolution = str(self._cfg("YOUTUBE_MAX_RESOLUTION", "1080P") or "1080P")
 
         # 视频/图片暂存目录（对应 R 插件的「视频暂存位置」），留空用插件默认目录
         set_temp_dir(str(self._cfg("TEMP_PATH", "") or ""))
@@ -213,6 +235,24 @@ class RPlugin(Star):
             video_size_limit_mb=self.video_size_limit_mb,
             image_use_forward=self.image_use_forward,
             enable_ssr=self.douyin_enable_ssr,
+        ):
+            yield result
+
+    # ------------------------------------------------------------ YouTube
+
+    @filter.regex(r".*(youtube\.com|youtu\.be).*")
+    async def youtube(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
+        if not self._enabled("youtube"):
+            return
+        async for result in process_youtube_url(
+            event,
+            self.youtube_duration,
+            video_size_limit_mb=self.video_size_limit_mb,
+            proxy=proxy_for("youtube"),
+            display_cover=self.youtube_display_cover,
+            display_info=self.youtube_display_info,
+            desc_len_limit=self.youtube_desc_len_limit,
+            max_resolution=self.youtube_max_resolution,
         ):
             yield result
 

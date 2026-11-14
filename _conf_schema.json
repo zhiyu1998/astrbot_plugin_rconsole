@@ -65,6 +65,21 @@
     "default": "aria2c",
     "hint": "默认从 PATH 找；也可以填绝对路径，例如 /usr/bin/aria2c"
   },
+  "PROXY_URL": {
+    "description": "【代理】代理地址",
+    "type": "string",
+    "default": "",
+    "hint": "填完整地址，例如 http://127.0.0.1:7897 或 socks5://127.0.0.1:7897；留空表示直连。不写协议会按 http 处理",
+    "obvious_hint": true
+  },
+  "PROXY_PLATFORMS": {
+    "description": "【代理】走代理的平台",
+    "type": "list",
+    "default": [
+      "youtube"
+    ],
+    "hint": "按平台英文名填：youtube / douyin / bilibili / weibo / xhs …；留空表示所有平台都走代理"
+  },
   "CARD_PARSE_ENABLED": {
     "description": "【全局】解析 QQ 小程序/分享卡片",
     "type": "bool",
@@ -91,7 +106,6 @@
     "default": "http://47.99.158.118/video-crack/v2/parse?content={}\nhttps://api.jkyai.top/API/jhspjx.php?url={}\nhttps://api.yujn.cn/api/pipixia.php?url={}\nhttps://api.bugpk.com/api/pipixia?url={}",
     "hint": "每行一个接口，{} 为原始链接占位。用于快手原生解析失败时的兜底，以及西瓜/皮皮虾/QQ小世界/即刻"
   },
-
   "BILI_SESSDATA": {
     "description": "【哔哩哔哩】SESSDATA",
     "type": "string",
@@ -160,7 +174,12 @@
     "description": "【哔哩哔哩】视频编码偏好",
     "type": "string",
     "default": "自动（推荐）",
-    "options": ["自动（推荐）", "HEVC/H.265", "AV1", "AVC/H.264"],
+    "options": [
+      "自动（推荐）",
+      "HEVC/H.265",
+      "AV1",
+      "AVC/H.264"
+    ],
     "hint": "AV1 体积最小但部分播放器不支持；AVC 兼容性最好；自动 = HEVC > AV1 > AVC"
   },
   "BILI_USE_BBDOWN": {
@@ -180,7 +199,15 @@
     "description": "【哔哩哔哩】BBDown 强制 CDN",
     "type": "string",
     "default": "不使用",
-    "options": ["不使用", "腾讯CDN", "百度CDN", "华为CDN", "阿卡迈（海外）", "HK-CDN", "08ccdn"],
+    "options": [
+      "不使用",
+      "腾讯CDN",
+      "百度CDN",
+      "华为CDN",
+      "阿卡迈（海外）",
+      "HK-CDN",
+      "08ccdn"
+    ],
     "hint": "仅 BBDown 生效（--upos-host）；下载慢时可以换一个试试"
   },
   "BILI_BBDOWN_ARIA2C": {
@@ -189,7 +216,42 @@
     "default": false,
     "hint": "给 BBDown 加 --use-aria2c（需要服务器装 aria2）；不开则由 BBDown 自己单线程下载"
   },
-
+  "YOUTUBE_DURATION": {
+    "description": "【YouTube】独立时长上限（秒）",
+    "type": "int",
+    "default": 0,
+    "hint": "0 表示沿用全局 VIDEO_DURATION_MAXIMUM；超时只发封面和文字"
+  },
+  "YOUTUBE_MAX_RESOLUTION": {
+    "description": "【YouTube】最高画质",
+    "type": "string",
+    "default": "1080P",
+    "options": [
+      "2160P",
+      "1440P",
+      "1080P",
+      "720P",
+      "480P",
+      "360P"
+    ],
+    "hint": "下载时按这个高度封顶；4K 体积很大，注意配合 VIDEO_SIZE_LIMIT_MB"
+  },
+  "YOUTUBE_DISPLAY_COVER": {
+    "description": "【YouTube】显示封面",
+    "type": "bool",
+    "default": true
+  },
+  "YOUTUBE_DISPLAY_INFO": {
+    "description": "【YouTube】显示作者/播放/点赞/时长",
+    "type": "bool",
+    "default": true
+  },
+  "YOUTUBE_DESC_LEN_LIMIT": {
+    "description": "【YouTube】简介截断长度",
+    "type": "int",
+    "default": 0,
+    "hint": "0 或 -1 表示不限制（YouTube 简介通常很长，建议设 120 左右）"
+  },
   "DOUYIN_CK": {
     "description": "【抖音】Cookie",
     "type": "string",
@@ -215,7 +277,6 @@
     "default": true,
     "hint": "SSR 页面时灵时不灵（抖音在逐步下线），留着没坏处；关掉后只走 Cookie 接口 + 第三方接口"
   },
-
   "WEIBO_CK": {
     "description": "【微博】Cookie",
     "type": "string",
@@ -229,7 +290,6 @@
     "default": true,
     "hint": "关闭后只发正文、图片和视频"
   },
-
   "XHS_CK": {
     "description": "【小红书】Cookie",
     "type": "string",
@@ -243,7 +303,6 @@
     "default": 78,
     "hint": "正文超过这个字数就折叠，并在后面补一条合并转发放全文；填 0 或 -1 表示不折叠、直接发全文"
   },
-
   "XHH_CK": {
     "description": "【小黑盒】Cookie",
     "type": "string",

@@ -87,6 +87,64 @@ def _sem() -> asyncio.Semaphore:
     return _download_sem
 
 
+# ---------------------------------------------------------------- 代理
+
+_PROXY_URL = ""
+_PROXY_PLATFORMS = ["youtube"]
+
+# httpx / yt-dlp 支持的协议
+_PROXY_SCHEMES = ("http", "https", "socks5", "socks5h", "socks4")
+
+
+def normalize_proxy_url(raw: str) -> str:
+    """
+    把各种写法统一成代理 URL，空串表示直连。
+
+        127.0.0.1:7897        -> http://127.0.0.1:7897
+        http://127.0.0.1:7897 -> 原样
+        socks5://127.0.0.1:7897 -> 原样
+    """
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    if "://" not in text:
+        text = "http://" + text
+    scheme, _, rest = text.partition("://")
+    scheme = scheme.strip().lower()
+    if scheme not in _PROXY_SCHEMES:
+        scheme = "http"
+    rest = rest.strip().strip("/")
+    return f"{scheme}://{rest}" if rest else ""
+
+
+def set_proxy(url: str = "", platforms=None) -> str:
+    """配置代理：url 为空即直连；platforms 为空表示所有平台都走代理"""
+    global _PROXY_URL, _PROXY_PLATFORMS
+    _PROXY_URL = normalize_proxy_url(url)
+    if platforms is not None:
+        _PROXY_PLATFORMS = [str(p).strip().lower() for p in platforms if str(p).strip()]
+    return _PROXY_URL
+
+
+def proxy_for(platform: str) -> Optional[str]:
+    """取某个平台要用的代理地址，返回 None 表示直连"""
+    if not _PROXY_URL:
+        return None
+    if _PROXY_PLATFORMS and str(platform or "").lower() not in _PROXY_PLATFORMS:
+        return None
+    return _PROXY_URL
+
+
+def _httpx_client(timeout: float, proxy: Optional[str] = None) -> httpx.AsyncClient:
+    """按需带代理创建 httpx 客户端（兼容不同 httpx 版本的参数名）"""
+    if not proxy:
+        return httpx.AsyncClient(follow_redirects=True, timeout=timeout)
+    try:
+        return httpx.AsyncClient(follow_redirects=True, timeout=timeout, proxy=proxy)
+    except TypeError:
+        return httpx.AsyncClient(follow_redirects=True, timeout=timeout, proxies=proxy)
+
+
 # ---------------------------------------------------------------- aria2c
 
 _USE_ARIA2 = False
@@ -459,6 +517,7 @@ async def download_file(
     timeout: float = 180.0,
     referer: Optional[str] = None,
     threads: Optional[int] = None,
+    proxy: Optional[str] = None,
 ) -> Optional[str]:
     """
     流式下载到本地，返回路径；失败返回 None。
@@ -500,7 +559,7 @@ async def download_file(
                 delete_file(path)
 
         try:
-            async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
+            async with _httpx_client(timeout, proxy) as client:
                 async with client.stream("GET", url, headers=req_headers) as resp:
                     if resp.status_code >= 400:
                         logger.warning(f"[R插件] 下载失败 {url} 状态码 {resp.status_code}")
@@ -679,6 +738,7 @@ async def local_image(
     headers: Optional[Dict[str, str]] = None,
     prefix: str = "img",
     timeout: float = 60.0,
+    proxy: Optional[str] = None,
 ) -> Optional[Any]:
     """
     先把图片下载到本地再发。
@@ -690,7 +750,8 @@ async def local_image(
     if not url:
         return None
     path = await download_file(
-        url, build_temp_path(prefix, ".jpg"), headers=headers, referer=referer, timeout=timeout
+        url, build_temp_path(prefix, ".jpg"), headers=headers, referer=referer, timeout=timeout,
+        proxy=proxy
     )
     if not path:
         return None
