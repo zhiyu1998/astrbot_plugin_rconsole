@@ -1,6 +1,11 @@
 name: Release
 
 # 打 tag（v*）自动建 Release；也支持手动指定已有 tag 补建
+#
+# 注意：打附注 tag 时一定要加 --cleanup=verbatim，例如
+#   git tag -a v1.2.5 -F notes.md --cleanup=verbatim
+# 否则 git 会把以 # 开头的行（Markdown 的 ## 标题）当注释删掉，
+# release 里就只剩正文条目、没有小标题了。
 on:
   push:
     tags:
