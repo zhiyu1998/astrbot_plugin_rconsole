@@ -5,21 +5,18 @@
 </p>
 
 <div align="center">
-    <h1>astrbot_plugin_rconsole</h1>
-
-    <p>
-      <a href="https://github.com/zhiyu1998/astrbot_plugin_rconsole/releases"><img src="https://img.shields.io/badge/version-v1.2.6-2f6f5e" alt="Version v1.2.6"></a>
-      <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-%3E%3D3.10-3776ab" alt="Python 3.10+"></a>
-      <a href="https://astrbot.app/"><img src="https://img.shields.io/badge/AstrBot-plugin-4c78a8" alt="AstrBot Plugin"></a>
-      <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2f6f5e" alt="MIT License"></a>
-    </p>
-
-    <p>
-      <img src="https://count.getloli.com/get/@zhiyu1998-astrbot_plugin_rconsole?theme=moebooru" alt="访问次数">
-    </p>
-
-    专门为朋友们写的AstrBot插件（AstrBot_R插件的迁移版本），专注图片视频分享、生活、健康和学习的插件！
-    <img src="https://cdn.z.wiki/autoupload/20240819/Zn2g/github-contribution-grid-snake.svg">
+<h1>astrbot_plugin_rconsole</h1>
+<p>
+<a href="https://github.com/zhiyu1998/astrbot_plugin_rconsole/releases"><img src="https://img.shields.io/badge/version-v1.2.6-2f6f5e" alt="Version v1.2.6"></a>
+<a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-%3E%3D3.10-3776ab" alt="Python 3.10+"></a>
+<a href="https://astrbot.app/"><img src="https://img.shields.io/badge/AstrBot-plugin-4c78a8" alt="AstrBot Plugin"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2f6f5e" alt="MIT License"></a>
+</p>
+<p>
+<img src="https://count.getloli.com/get/@zhiyu1998-astrbot_plugin_rconsole?theme=moebooru" alt="访问次数">
+</p>
+专门为朋友们写的AstrBot插件（AstrBot_R插件的迁移版本），专注图片视频分享、生活、健康和学习的插件！
+<img src="https://cdn.z.wiki/autoupload/20240819/Zn2g/github-contribution-grid-snake.svg">
 </div>
 
 ## 安装部署
