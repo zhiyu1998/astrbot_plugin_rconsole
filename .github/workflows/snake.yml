@@ -1,0 +1,36 @@
+name: Generate Snake
+
+# 用 Platane/snk 从 GitHub 贡献图生成蛇形动画，产物推送到 output 分支
+# README 里引用 https://raw.githubusercontent.com/<user>/<repo>/output/github-snake.svg
+
+on:
+  schedule:
+    - cron: "0 0 * * *" # 每天 00:00 UTC 重新生成
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Generate snake svg
+        uses: Platane/snk/svg-only@v3
+        with:
+          github_user_name: ${{ github.repository_owner }}
+          outputs: |
+            dist/github-snake.svg
+            dist/github-snake-dark.svg?palette=github-dark
+
+      - name: Push to output branch
+        uses: crazy-max/ghaction-github-pages@v4
+        with:
+          target_branch: output
+          build_dir: dist
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
