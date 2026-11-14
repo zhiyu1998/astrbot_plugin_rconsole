@@ -86,6 +86,96 @@ def _fmt_count(value: Any) -> str:
     return str(number)
 
 
+# ---------------------------------------------------------------- 错误诊断
+
+# 常见报错特征 → 人话解释
+_BLOCK_SIGNS = (
+    "unexpected_eof",
+    "eof occurred in violation",
+    "connection reset",
+    "connection aborted",
+    "remote end closed",
+    "ssl",
+    "timed out",
+    "timeout",
+)
+_PROXY_SIGNS = (
+    "unable to connect to proxy",
+    "proxyerror",
+    "proxy error",
+    "tunnel connection failed",
+    "connection refused",
+)
+
+
+def diagnose_error(exc: BaseException, proxy: Optional[str]) -> str:
+    """
+    把 yt-dlp 的报错翻译成能直接照做的提示。
+
+    区分三种情况：
+      1. 没配代理 / 代理没生效，但目标站点被墙（SSL EOF、连接重置）
+      2. 配了代理但连不上（refused / tunnel failed）
+      3. 其他（视频不存在、地区限制、需要登录等）
+    """
+    raw = str(exc)
+    low = raw.lower()
+
+    if any(sign in low for sign in _PROXY_SIGNS):
+        if proxy:
+            return (
+                f"代理连不上（{proxy}）。检查地址和端口是否写对、代理是否在运行、"
+                "服务器能否访问到它；改好后重试。"
+            )
+        return "网络不通：连接被拒绝。"
+
+    blocked = any(sign in low for sign in _BLOCK_SIGNS)
+    if blocked:
+        if not proxy:
+            return (
+                "服务器连不上 YouTube（TLS 握手被重置 / 域名被污染），这不是插件的问题。"
+                "请在面板「【代理】代理地址」填上可用的代理，例如 http://127.0.0.1:7897，"
+                "并确认「走代理的平台」里包含 youtube。"
+            )
+        return (
+            f"已配置代理（{proxy}），但 YouTube 仍然连不上："
+            "代理可能没生效、被限速或线路不通，换个节点/端口试试。"
+        )
+
+    if "video unavailable" in low or "not available" in low:
+        return "视频不可用：可能已删除、私享，或在你所在地区被限制。"
+    if "private" in low:
+        return "该视频是私享视频，无法解析。"
+    if "members-only" in low or "join this channel" in low:
+        return "该视频仅频道会员可看，需要 Cookie 才能下载。"
+    if "age" in low and "confirm" in low:
+        return "该视频有年龄限制，需要登录 Cookie 才能解析。"
+    if "sign in" in low:
+        return "该视频需要登录才能查看（可在 yt-dlp 侧配置 Cookie）。"
+
+    return ""
+
+
+async def check_proxy(proxy: Optional[str], timeout: float = 8.0) -> Dict[str, Any]:
+    """代理连通性自检：返回能否连到 YouTube"""
+    import httpx
+
+    target = "https://www.youtube.com/generate_204"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        if proxy:
+            try:
+                client = httpx.AsyncClient(timeout=timeout, proxy=proxy, follow_redirects=True)
+            except TypeError:
+                client = httpx.AsyncClient(timeout=timeout, proxies=proxy, follow_redirects=True)
+        else:
+            client = httpx.AsyncClient(timeout=timeout, follow_redirects=True)
+        async with client:
+            resp = await client.get(target, headers=headers)
+        return {"ok": resp.status_code in (200, 204), "status": resp.status_code, "proxy": proxy}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)[:160], "proxy": proxy}
+
+
 def _extract_info(url: str, proxy: Optional[str]) -> Dict[str, Any]:
     """同步调用 yt-dlp 取元数据（放到线程里跑）"""
     import yt_dlp
@@ -171,8 +261,11 @@ async def process_youtube_url(
         info = await asyncio.to_thread(_extract_info, url, proxy)
     except Exception as exc:  # noqa: BLE001
         logger.error(f"[R插件][YouTube] 取信息失败: {exc}")
-        hint = "（YouTube 通常需要代理，检查 PROXY_ENABLED / PROXY_ADDR / PROXY_PORT）" if not proxy else ""
-        yield event.plain_result(f"YouTube 解析失败：{exc}{hint}")
+        advice = diagnose_error(exc, proxy)
+        yield event.plain_result(
+            f"YouTube 解析失败：{advice or str(exc)[:200]}\n"
+            f"（详细日志：{str(exc).splitlines()[0][:180]}）"
+        )
         return
 
     if info.get("_type") == "playlist" and info.get("entries"):
@@ -230,7 +323,10 @@ async def process_youtube_url(
         path = await asyncio.to_thread(_download, url, work_dir, vid, proxy, max_height)
     except Exception as exc:  # noqa: BLE001
         logger.error(f"[R插件][YouTube] 下载失败: {exc}")
-        yield event.plain_result(f"YouTube 视频下载失败：{exc}")
+        advice = diagnose_error(exc, proxy)
+        yield event.plain_result(
+            f"YouTube 视频下载失败：{advice or str(exc)[:200]}\n原视频：{url}"
+        )
         return
 
     logger.info(f"[R插件][YouTube] 下载完成 {path}")

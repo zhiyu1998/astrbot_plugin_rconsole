@@ -168,9 +168,22 @@ def normalize_proxy_url(raw: str) -> str:
 
 
 def set_proxy(url: str = "", platforms=None) -> str:
-    """配置代理：url 为空即直连；platforms 为空表示所有平台都走代理"""
+    """
+    配置代理：url 为空即直连；platforms 为空表示所有平台都走代理。
+
+    面板留空时回退读环境变量（HTTPS_PROXY / ALL_PROXY / HTTP_PROXY），
+    方便已经在系统里挂了代理的环境直接复用。
+    """
     global _PROXY_URL, _PROXY_PLATFORMS
     _PROXY_URL = normalize_proxy_url(url)
+    if not _PROXY_URL:
+        for env_key in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy", "HTTP_PROXY", "http_proxy"):
+            env_value = os.environ.get(env_key, "").strip()
+            if env_value:
+                _PROXY_URL = normalize_proxy_url(env_value)
+                if _PROXY_URL:
+                    logger.info(f"[R插件] 代理取自环境变量 {env_key}")
+                    break
     if platforms is not None:
         _PROXY_PLATFORMS = [str(p).strip().lower() for p in platforms if str(p).strip()]
     return _PROXY_URL

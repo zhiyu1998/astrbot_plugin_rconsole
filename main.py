@@ -8,6 +8,7 @@ R插件（AstrBot 迁移版）入口
 视频号、链接总结这些分支没有迁移。
 """
 
+import asyncio
 import re
 from typing import Any, AsyncGenerator
 
@@ -29,7 +30,7 @@ from .core.common import (
 )
 from .core.douyin import process_douyin_url
 from .core.general import process_general_url
-from .core.youtube import process_youtube_url
+from .core.youtube import check_proxy, process_youtube_url
 from .core.miyoushe import process_miyoushe_url
 from .core.weibo import process_weibo_url
 from .core.weishi import process_weishi_url
@@ -213,6 +214,23 @@ class RPlugin(Star):
     async def initialize(self):
         self._apply_file_service_mode()
         logger.info(f"[R插件] 已加载，解析平台：{'、'.join(PLATFORM_ALIASES.values())}")
+        # 配了代理就顺手自检一次，连不上时提前在日志里说清楚
+        if self.proxy_url and self._enabled("youtube"):
+            asyncio.create_task(self._check_proxy_health())
+
+    async def _check_proxy_health(self):
+        try:
+            result = await check_proxy(self.proxy_url)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"[R插件] 代理自检异常: {exc}")
+            return
+        if result.get("ok"):
+            logger.info(f"[R插件] 代理自检通过：{self.proxy_url} 可访问 YouTube")
+        else:
+            logger.warning(
+                f"[R插件] 代理自检失败：{self.proxy_url} 连不上 YouTube"
+                f"（{result.get('error') or result.get('status')}），请检查代理是否可用"
+            )
 
     async def terminate(self):
         if self.card_parse_enabled:
