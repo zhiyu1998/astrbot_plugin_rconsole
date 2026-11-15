@@ -740,6 +740,74 @@ main {
   background: var(--bad);
 }
 
+/* ------------------------------------------------------------- 细滚动条 */
+
+.rail-nav,
+.content,
+.grid,
+.field-control textarea,
+.rail {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(177, 173, 161, 0.75) transparent;
+}
+
+.rail-nav::-webkit-scrollbar,
+.content::-webkit-scrollbar,
+.grid::-webkit-scrollbar,
+.field-control textarea::-webkit-scrollbar,
+.rail::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.rail-nav::-webkit-scrollbar-track,
+.content::-webkit-scrollbar-track,
+.grid::-webkit-scrollbar-track,
+.field-control textarea::-webkit-scrollbar-track,
+.rail::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.rail-nav::-webkit-scrollbar-thumb,
+.content::-webkit-scrollbar-thumb,
+.grid::-webkit-scrollbar-thumb,
+.field-control textarea::-webkit-scrollbar-thumb,
+.rail::-webkit-scrollbar-thumb {
+  background: rgba(177, 173, 161, 0.65);
+  border-radius: 99px;
+  border: 0;
+  transition: background 0.15s ease;
+}
+
+.rail-nav::-webkit-scrollbar-thumb:hover,
+.content::-webkit-scrollbar-thumb:hover,
+.grid::-webkit-scrollbar-thumb:hover,
+.field-control textarea::-webkit-scrollbar-thumb:hover,
+.rail::-webkit-scrollbar-thumb:hover {
+  background: rgba(193, 95, 60, 0.55);
+}
+
+.rail-nav::-webkit-scrollbar-corner,
+.content::-webkit-scrollbar-corner,
+.grid::-webkit-scrollbar-corner,
+.field-control textarea::-webkit-scrollbar-corner,
+.rail::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* 窄屏顶部横条同样细 */
+
+@media (max-width: 820px) {
+  .rail-nav {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(177, 173, 161, 0.75) transparent;
+  }
+
+  .rail-nav::-webkit-scrollbar {
+    height: 4px;
+  }
+}
+
 /* ------------------------------------------------------------- 窄屏 */
 
 @media (max-width: 820px) {
