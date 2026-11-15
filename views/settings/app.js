@@ -27,6 +27,7 @@ const GROUP_ICONS = {
 const state = {
   groups: [],
   active: "",
+  lastGroup: "",
   query: "",
   pending: new Map(),
   edited: new Set(),
@@ -214,6 +215,7 @@ function paintRail() {
       state.query = "";
       $("#search").value = "";
       state.active = group.name;
+      state.lastGroup = group.name;
       renderPanel();
     });
     host.appendChild(button);
@@ -309,13 +311,17 @@ function renderPanel() {
     return;
   }
 
-  const group = state.groups.find((item) => item.name === state.active) || state.groups[0];
+  const group =
+    state.groups.find((item) => item.name === state.active) ||
+    state.groups.find((item) => item.name === state.lastGroup) ||
+    state.groups[0];
   if (!group) {
     host.innerHTML = '<div class="skeleton">配置为空。</div>';
     paintRail();
     return;
   }
   state.active = group.name;
+  state.lastGroup = group.name;
   title.textContent = group.name;
   count.textContent = `${group.fields.length} 项`;
   group.fields.forEach((field) => host.appendChild(renderField(field)));
@@ -334,6 +340,7 @@ async function loadSchema() {
   }
   state.pending.clear();
   state.edited.clear();
+  if (state.query === "__edited__") state.query = "";
   $("#saveHint").textContent = "";
   renderPanel();
 }
