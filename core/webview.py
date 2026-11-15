@@ -23,6 +23,11 @@ from astrbot.api.web import error_response, json_response, request
 SECRET_MARKERS = ("CK", "COOKIE", "SESSDATA", "TOKEN", "SECRET", "PASSWORD", "KEY")
 _TRUE = {"true", "1", "on", "yes", "是"}
 
+# 值需要从 AstrBot 运行时动态拉取的字段：key -> 数据源名
+DYNAMIC_OPTION_FIELDS = {
+    "SUMMARY_PROVIDER_ID": "providers",
+}
+
 
 def _is_secret(key: str) -> bool:
     upper = key.upper()
@@ -128,6 +133,7 @@ def register_view_apis(context, plugin, plugin_name: str) -> None:
                 "is_secret": secret,
                 "has_value": has_value,
                 "obvious": bool(field.get("obvious_hint")),
+                "dynamic_options": DYNAMIC_OPTION_FIELDS.get(key, ""),
             }
             if group not in groups:
                 groups[group] = []
@@ -272,6 +278,49 @@ def register_view_apis(context, plugin, plugin_name: str) -> None:
             }
         )
 
+    async def page_providers():
+        """列出 AstrBot 当前可用的对话模型 Provider，供下拉框直接选择"""
+        items: List[Dict[str, Any]] = []
+
+        default_id = ""
+        try:
+            using = context.get_using_provider()
+            if using is not None:
+                default_id = getattr(using.meta(), "id", "") or ""
+        except Exception:  # noqa: BLE001
+            default_id = ""
+
+        try:
+            providers = context.get_all_providers() or []
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"[R插件] 读取 Provider 列表失败: {exc}")
+            providers = []
+
+        for provider in providers:
+            try:
+                meta = provider.meta()
+            except Exception:  # noqa: BLE001
+                continue
+            pid = str(getattr(meta, "id", "") or "").strip()
+            if not pid:
+                continue
+            model = str(getattr(meta, "model", "") or "").strip()
+            ptype = str(getattr(meta, "type", "") or "").strip()
+            label = f"{model or pid} · {pid}"
+            if ptype:
+                label = f"{label} 〔{ptype}〕"
+            items.append(
+                {
+                    "id": pid,
+                    "label": label,
+                    "model": model,
+                    "type": ptype,
+                    "is_default": pid == default_id,
+                }
+            )
+
+        return json_response({"items": items, "default": default_id})
+
     async def page_probe():
         from .common import proxy_for, temp_dir
         from .youtube import check_proxy
@@ -311,3 +360,6 @@ def register_view_apis(context, plugin, plugin_name: str) -> None:
     context.register_web_api(f"/{plugin_name}/view/save", page_save, ["POST"], "R插件保存配置")
     context.register_web_api(f"/{plugin_name}/view/status", page_status, ["GET"], "R插件运行状态")
     context.register_web_api(f"/{plugin_name}/view/probe", page_probe, ["POST"], "R插件连通性探测")
+    context.register_web_api(
+        f"/{plugin_name}/view/providers", page_providers, ["GET"], "R插件可用模型列表"
+    )

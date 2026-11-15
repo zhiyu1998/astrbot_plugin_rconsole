@@ -20,6 +20,7 @@ const GROUP_ICONS = {
   下载与代理: "⬇️",
   暂存目录: "📁",
   卡片解析: "🃏",
+  AI总结: "🧠",
   解析: "🔍",
   展示: "🎨",
 };
@@ -31,6 +32,8 @@ const state = {
   query: "",
   pending: new Map(),
   edited: new Set(),
+  providers: [],
+  providersLoaded: false,
 };
 
 /* ---------------------------------------------------------------- 工具 */
@@ -142,6 +145,52 @@ function renderField(field) {
       setPending(field, lines);
     });
     control.appendChild(area);
+  } else if (field.dynamic_options === "providers") {
+    const row = document.createElement("div");
+    row.className = "dyn-row";
+    const select = document.createElement("select");
+    const fill = () => {
+      const cur = String(fieldValue(field) ?? "");
+      select.innerHTML = "";
+      const blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = "（跟随当前会话默认模型）";
+      select.appendChild(blank);
+      const list = state.providers.slice();
+      if (cur && !list.some((p) => p.id === cur)) {
+        list.unshift({ id: cur, label: `${cur}（不在当前列表）` });
+      }
+      list.forEach((p) => {
+        const item = document.createElement("option");
+        item.value = p.id;
+        item.textContent = p.label + (p.is_default ? " ★默认" : "");
+        if (cur === p.id) item.selected = true;
+        select.appendChild(item);
+      });
+      select.value = cur;
+    };
+    fill();
+    select.addEventListener("change", () => setPending(field, select.value));
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "mini-btn";
+    btn.textContent = "刷新";
+    btn.title = "重新从 AstrBot 读取模型列表";
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try {
+        await loadProviders(true);
+        fill();
+        toast(`已刷新，共 ${state.providers.length} 个模型`);
+      } catch (err) {
+        toast(`刷新失败：${err.message}`, true);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    row.appendChild(select);
+    row.appendChild(btn);
+    control.appendChild(row);
   } else if (field.options && field.options.length) {
     const select = document.createElement("select");
     field.options.forEach((option) => {
@@ -330,9 +379,25 @@ function renderPanel() {
 
 /* ---------------------------------------------------------------- 数据 */
 
+async function loadProviders(force = false) {
+  if (state.providersLoaded && !force) return state.providers;
+  try {
+    const data = await bridge.apiGet("view/providers");
+    state.providers = (data && data.items) || [];
+    state.providersLoaded = true;
+  } catch (err) {
+    state.providers = [];
+  }
+  return state.providers;
+}
+
 async function loadSchema() {
   const data = await bridge.apiGet("view/schema");
   state.groups = data.groups || [];
+  state.providersLoaded = false;
+  if (state.groups.some((group) => group.fields.some((field) => field.dynamic_options))) {
+    await loadProviders(true);
+  }
   if (data.version) $("#versionTag").textContent = `v${data.version}`;
   if (!state.active || !state.groups.some((group) => group.name === state.active)) {
     const preferred = state.groups.find((group) => group.name === "全局");

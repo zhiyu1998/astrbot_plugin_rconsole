@@ -22,6 +22,7 @@ desc: |
   | 微视 | 短视频 |
   | YouTube | yt-dlp 解析视频，支持画质封顶，需要配置代理 |
   | 微信视频号 | 走腾讯元宝接口解析，需填元宝 Cookie |
+  | AI 总结 | 微信文章 / ArXiv / 少数派 / B站专栏 / 知乎 / GitHub / V2EX 链接，抓正文后交给 AstrBot 默认大模型总结 |
 
   **主要特性**
 
@@ -31,9 +32,10 @@ desc: |
   - 支持 HTTP / SOCKS5 代理（`PROXY_URL`），YouTube 等站点可直接解析
   - 每个平台的展示内容、视频时长/体积上限都可单独配置
   - 视频超过上限只发文字和原链接，不会把几十 MB 的文件塞进消息
+  - AI 总结直接用 AstrBot 当前会话的模型，不需要额外填 API Key
 
   安装后到面板「插件 → R插件」里填 Cookie 即可，XHH_CK（小黑盒）必填，BILI_SESSDATA 影响 B 站画质。
-version: v1.2.7
+version: v1.2.8
 author: zhiyu1998
 repo: https://github.com/zhiyu1998/astrbot_plugin_rconsole
 astrbot_version: ">=4.5.0,<5"

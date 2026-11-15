@@ -345,5 +345,36 @@
     "type": "int",
     "default": 50,
     "hint": "帖子最多转发多少条评论，太多会影响发送速度"
+  },
+  "SUMMARY_ENABLED": {
+    "description": "【AI 总结】启用 AI 总结",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后，发送 微信文章 / ArXiv / 少数派 / B站专栏 / 知乎问题 / ChinaDaily / GitHub / V2EX 链接会自动抓正文并让大模型总结；也可直接发「#总结一下 链接」",
+    "obvious_hint": true
+  },
+  "SUMMARY_PROVIDER_ID": {
+    "description": "【AI 总结】指定模型 Provider ID",
+    "type": "string",
+    "default": "",
+    "hint": "留空 = 用当前会话正在使用的模型（推荐）。也可在可视化设置页直接从下拉框挑选已配置的模型，无需手抄 id"
+  },
+  "SUMMARY_MAX_CHARS": {
+    "description": "【AI 总结】正文最多截取字符数",
+    "type": "int",
+    "default": 30000,
+    "hint": "网页正文太长会撑爆上下文，默认截到 3 万字符。模型上下文小的可以调低到 10000"
+  },
+  "SUMMARY_TIMEOUT": {
+    "description": "【AI 总结】抓取网页超时（秒）",
+    "type": "int",
+    "default": 120,
+    "hint": "抓网页 + 等模型返回的总超时，默认 120 秒"
+  },
+  "SUMMARY_USE_FORWARD": {
+    "description": "【AI 总结】用合并转发发送结果",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后总结正文走合并转发（跟原 R 插件观感一致）；关掉则直接发一条长文本"
   }
 }

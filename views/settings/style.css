@@ -484,6 +484,43 @@ main {
   width: 100%;
 }
 
+/* 动态下拉（模型列表）+ 刷新按钮 */
+.dyn-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.dyn-row select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.mini-btn {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--pampas, #f4f3ee);
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.mini-btn:hover {
+  border-color: var(--crail);
+  color: var(--crail);
+}
+
+.mini-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .badge-set {
   flex: 0 0 auto;
   padding: 2px 8px;

@@ -1,11 +1,11 @@
 """
 R插件（AstrBot 迁移版）入口
 
-迁移自 Yunzai 版 rconsole-plugin 的 apps/tools.js，第一版只保留解析类功能：
-抖音、哔哩哔哩、快手、微博、AcFun、小红书、米游社、小黑盒、微视。
+迁移自 Yunzai 版 rconsole-plugin 的 apps/tools.js，只保留解析类功能：
+抖音、哔哩哔哩、快手、微博、AcFun、小红书、米游社、小黑盒、微视、YouTube、
+微信视频号、AI 总结。
 
-点歌（网易云 / 酷狗 / QQ音乐）、油管、X、Instagram、Telegram、贴吧、最右、
-视频号、链接总结这些分支没有迁移。
+点歌（网易云 / 酷狗 / QQ音乐）、X、Instagram、Telegram、贴吧、最右这些分支没有迁移。
 """
 
 import asyncio
@@ -21,6 +21,7 @@ from .core.acfun import process_acfun_url
 from .core.bili23 import process_bilibili_url
 from .core import card as card_parser
 from .core.common import (
+    get_message_text,
     proxy_for,
     set_aria2,
     set_download_limits,
@@ -34,13 +35,14 @@ from .core.webview import register_view_apis
 from .core.wxchannel import process_wxchannel_url
 from .core.youtube import check_proxy, process_youtube_url, set_cookie_file
 from .core.miyoushe import process_miyoushe_url
+from .core.summary import detect_summary_target, process_summary_url
 from .core.weibo import process_weibo_url
 from .core.weishi import process_weishi_url
 from .core.xhs import process_xiaohongshu_url
 from .core.xiaoheihe import process_xiaoheihe_url
 
 PLUGIN_NAME = "astrbot_plugin_rconsole"
-VERSION = "1.2.7"
+VERSION = "1.2.8"
 PLATFORM_ALIASES = {
     "douyin": "抖音",
     "bilibili": "哔哩哔哩",
@@ -53,6 +55,7 @@ PLATFORM_ALIASES = {
     "weishi": "微视",
     "youtube": "YouTube",
     "wxchannel": "微信视频号",
+    "summary": "AI总结",
 }
 
 # 面板里显示的是中文标签，代码里用 auto/hevc/av1/avc（兼容直接填英文）
@@ -71,8 +74,8 @@ _CODEC_ALIAS = {
 @register(
     PLUGIN_NAME,
     "RrOrange",
-    "R插件迁移版：抖音/B站/快手/微博/AcFun/小红书/米游社/小黑盒/微视 链接解析",
-    "1.2.7",
+    "R插件迁移版：抖音/B站/快手/微博/AcFun/小红书/米游社/小黑盒/微视 链接解析 + AI 总结",
+    "1.2.8",
 )
 class RPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -194,7 +197,14 @@ class RPlugin(Star):
         # 视频/图片暂存目录（对应 R 插件的「视频暂存位置」），留空用插件默认目录
         set_temp_dir(str(self._cfg("TEMP_PATH", "") or ""))
 
-        return ["基础参数", "平台展示", "下载与代理", "暂存目录"]
+        # AI 总结：抓网页正文 → AstrBot 当前会话的默认模型总结
+        self.summary_enabled = bool(self._cfg("SUMMARY_ENABLED", True))
+        self.summary_provider_id = str(self._cfg("SUMMARY_PROVIDER_ID", "") or "")
+        self.summary_max_chars = int(self._cfg("SUMMARY_MAX_CHARS", 30000) or 30000)
+        self.summary_timeout = int(self._cfg("SUMMARY_TIMEOUT", 120) or 120)
+        self.summary_use_forward = bool(self._cfg("SUMMARY_USE_FORWARD", True))
+
+        return ["基础参数", "平台展示", "下载与代理", "暂存目录", "AI 总结"]
 
     # ------------------------------------------------------------ 配置读取
 
@@ -326,6 +336,9 @@ class RPlugin(Star):
     async def bilibili(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
         if not self._enabled("bilibili"):
             return
+        # 专栏（/read/）交给 AI 总结处理，别当视频解析
+        if "/read/" in get_message_text(event):
+            return
         async for result in process_bilibili_url(
             event,
             self.credential,
@@ -452,5 +465,25 @@ class RPlugin(Star):
             event,
             identify_prefix=self.identify_prefix,
             video_size_limit_mb=self.video_size_limit_mb,
+        ):
+            yield result
+
+    # ------------------------------------------------------------ AI 总结
+
+    @filter.regex(
+        r".*(mp\.weixin\.qq\.com|arxiv\.org|sspai\.com|bilibili\.com/read|zhihu\.com/question"
+        r"|chinadaily\.com\.cn|github\.com|v2ex\.com/t|#总结一下).*"
+    )
+    async def ai_summary(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
+        if not self.summary_enabled or not self._enabled("summary"):
+            return
+        async for result in process_summary_url(
+            self.context,
+            event,
+            identify_prefix=self.identify_prefix,
+            provider_id=self.summary_provider_id,
+            max_chars=self.summary_max_chars,
+            timeout=self.summary_timeout,
+            use_forward=self.summary_use_forward,
         ):
             yield result
