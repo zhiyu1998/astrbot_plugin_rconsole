@@ -228,6 +228,56 @@ function renderField(field) {
       row.appendChild(badge);
     }
     control.appendChild(row);
+  } else if (field.type === "text") {
+    wrap.classList.add("field-wide");
+    const box = document.createElement("div");
+    box.className = "prompt-box";
+    const area = document.createElement("textarea");
+    area.className = "prompt-area";
+    area.spellcheck = false;
+    area.rows = 8;
+    area.value = value === null || value === undefined || value === "" ? field.default ?? "" : value;
+    const counter = document.createElement("span");
+    counter.className = "prompt-count";
+    const stateTag = document.createElement("span");
+    stateTag.className = "prompt-state";
+    const refreshCount = () => {
+      counter.textContent = `${area.value.length} 字符`;
+      const blank =
+        area.value.trim() === "" ||
+        (typeof field.default === "string" && area.value === field.default);
+      stateTag.textContent = blank ? "使用内置默认" : "已自定义";
+      stateTag.classList.toggle("is-default", blank);
+    };
+    refreshCount();
+    area.addEventListener("input", () => {
+      refreshCount();
+      setPending(field, area.value);
+    });
+    box.appendChild(area);
+
+    const bar = document.createElement("div");
+    bar.className = "prompt-bar";
+    const meta = document.createElement("span");
+    meta.className = "prompt-meta";
+    meta.appendChild(stateTag);
+    meta.appendChild(counter);
+    bar.appendChild(meta);
+    if (field.default) {
+      const reset = document.createElement("button");
+      reset.type = "button";
+      reset.className = "mini-btn";
+      reset.textContent = "恢复默认";
+      reset.addEventListener("click", () => {
+        area.value = field.default;
+        refreshCount();
+        setPending(field, field.default);
+        toast("已填入默认提示词，记得点击保存");
+      });
+      bar.appendChild(reset);
+    }
+    box.appendChild(bar);
+    control.appendChild(box);
   } else {
     const input = document.createElement("input");
     input.type = "text";

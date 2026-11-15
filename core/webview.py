@@ -114,6 +114,9 @@ def register_view_apis(context, plugin, plugin_name: str) -> None:
             group, label = _split_desc(field.get("description", key))
             secret = _is_secret(key)
             raw = config.get(key, field.get("default"))
+            if field.get("type") == "text":
+                # 长文本（提示词）：配置里没写过就回空，让前端展示内置默认值
+                raw = config.get(key, "")
             if secret:
                 value = ""
                 has_value = bool(str(raw or "").strip())

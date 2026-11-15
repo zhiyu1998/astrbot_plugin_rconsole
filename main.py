@@ -5,7 +5,9 @@ R插件（AstrBot 迁移版）入口
 抖音、哔哩哔哩、快手、微博、AcFun、小红书、米游社、小黑盒、微视、YouTube、
 微信视频号、AI 总结。
 
-点歌（网易云 / 酷狗 / QQ音乐）、X、Instagram、Telegram、贴吧、最右这些分支没有迁移。
+点歌（网易云 / 酷狗 / QQ音乐）、X、Instagram、Telegram 频道消息、贴吧、最右这些
+解析分支没有迁移；Telegram 作为**消息平台**已适配（文字先行发送、上传超时放宽、
+组件级重试，见 core/tgfix.py）。
 """
 
 import asyncio
@@ -20,6 +22,7 @@ from bilibili_api import Credential
 from .core.acfun import process_acfun_url
 from .core.bili23 import process_bilibili_url
 from .core import card as card_parser
+from .core import tgfix as tg_patch
 from .core.common import (
     get_message_text,
     proxy_for,
@@ -42,7 +45,7 @@ from .core.xhs import process_xiaohongshu_url
 from .core.xiaoheihe import process_xiaoheihe_url
 
 PLUGIN_NAME = "astrbot_plugin_rconsole"
-VERSION = "1.2.8"
+VERSION = "1.2.9"
 PLATFORM_ALIASES = {
     "douyin": "抖音",
     "bilibili": "哔哩哔哩",
@@ -74,8 +77,9 @@ _CODEC_ALIAS = {
 @register(
     PLUGIN_NAME,
     "RrOrange",
-    "R插件迁移版：抖音/B站/快手/微博/AcFun/小红书/米游社/小黑盒/微视 链接解析 + AI 总结",
-    "1.2.8",
+    "R插件迁移版：抖音/B站/快手/微博/AcFun/小红书/米游社/小黑盒/微视/YouTube/微信视频号 "
+    "链接解析 + AI 总结（已适配 Telegram 发送）",
+    "1.2.9",
 )
 class RPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -102,6 +106,19 @@ class RPlugin(Star):
                 "[R插件] 卡片解析补丁：适配器={} 日志大纲={}".format(
                     "OK" if self._card_patch_state.get("adapter") else "FAIL",
                     "OK" if self._card_patch_state.get("outline") else "FAIL",
+                )
+            )
+
+        # Telegram 发送兜底：文案先行、媒体逐个发且失败重试。
+        # 否则封面图上传超时（api.telegram.org 5s 读超时）会中断整条消息链，
+        # 用户只收到图片/视频，文字整段消失。
+        self.tg_send_compat = bool(self._cfg("TG_SEND_COMPAT", True))
+        self._tg_patch_state = {}
+        if self.tg_send_compat:
+            self._tg_patch_state = tg_patch.install()
+            logger.info(
+                "[R插件] Telegram 发送补丁：{}".format(
+                    "OK" if self._tg_patch_state.get("send") else "FAIL"
                 )
             )
 
@@ -203,6 +220,9 @@ class RPlugin(Star):
         self.summary_max_chars = int(self._cfg("SUMMARY_MAX_CHARS", 30000) or 30000)
         self.summary_timeout = int(self._cfg("SUMMARY_TIMEOUT", 120) or 120)
         self.summary_use_forward = bool(self._cfg("SUMMARY_USE_FORWARD", True))
+        # 提示词可由用户在设置页改写，留空则用插件内置默认
+        self.summary_system_prompt = str(self._cfg("SUMMARY_PROMPT", "") or "")
+        self.summary_user_prompt = str(self._cfg("SUMMARY_USER_PROMPT", "") or "")
 
         return ["基础参数", "平台展示", "下载与代理", "暂存目录", "AI 总结"]
 
@@ -274,6 +294,8 @@ class RPlugin(Star):
     async def terminate(self):
         if self.card_parse_enabled:
             card_parser.uninstall()
+        if getattr(self, "tg_send_compat", False):
+            tg_patch.uninstall()
         logger.info("[R插件] 已卸载")
 
     # ------------------------------------------------------------ 抖音
@@ -485,5 +507,7 @@ class RPlugin(Star):
             max_chars=self.summary_max_chars,
             timeout=self.summary_timeout,
             use_forward=self.summary_use_forward,
+            system_prompt=self.summary_system_prompt,
+            user_prompt=self.summary_user_prompt,
         ):
             yield result

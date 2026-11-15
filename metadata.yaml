@@ -1,6 +1,6 @@
 name: astrbot_plugin_rconsole
 display_name: R插件（多媒体链接解析）
-short_desc: 抖音/B站/快手/微博/AcFun/小红书/米游社/小黑盒/微视 链接解析，直接发链接就能出图文视频
+short_desc: 抖音/B站/快手/微博/AcFun/小红书/米游社/小黑盒/微视 链接解析，直接发链接就能出图文视频；已适配 Telegram 发送
 desc: |
   专门为朋友们写的AstrBot插件（AstrBot_R插件的迁移版本），专注图片视频分享、生活、健康和学习的插件！
 
@@ -24,6 +24,13 @@ desc: |
   | 微信视频号 | 走腾讯元宝接口解析，需填元宝 Cookie |
   | AI 总结 | 微信文章 / ArXiv / 少数派 / B站专栏 / 知乎 / GitHub / V2EX 链接，抓正文后交给 AstrBot 默认大模型总结 |
 
+  **支持的消息平台**
+
+  | 平台 | 适配情况 |
+  | --- | --- |
+  | QQ（aiocqhttp / NapCat） | 完整支持，含小程序/分享卡片解析、合并转发 |
+  | Telegram | 已适配：文字先行 + 上传超时放宽（5s→60s）+ 组件级重试，封面图超时不会再吞掉文案 |
+
   **主要特性**
 
   - 直接把链接丢群里就会解析，支持 QQ 小程序/分享卡片（自动解析卡片里的标题与链接）
@@ -33,14 +40,16 @@ desc: |
   - 每个平台的展示内容、视频时长/体积上限都可单独配置
   - 视频超过上限只发文字和原链接，不会把几十 MB 的文件塞进消息
   - AI 总结直接用 AstrBot 当前会话的模型，不需要额外填 API Key
+  - Telegram 上自动改用「先文字、后媒体」的发送顺序（`TG_SEND_COMPAT`，默认开）
 
   安装后到面板「插件 → R插件」里填 Cookie 即可，XHH_CK（小黑盒）必填，BILI_SESSDATA 影响 B 站画质。
-version: v1.2.8
+version: v1.2.9
 author: zhiyu1998
 repo: https://github.com/zhiyu1998/astrbot_plugin_rconsole
 astrbot_version: ">=4.5.0,<5"
 support_platforms:
   - aiocqhttp
+  - telegram
 social_link: https://github.com/zhiyu1998
 category: 工具
 tags:
@@ -52,3 +61,4 @@ tags:
   - 微博
   - 快手
   - 媒体
+  - Telegram

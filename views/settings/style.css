@@ -455,6 +455,59 @@ main {
   color: var(--ink);
 }
 
+.field.field-wide {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.field.field-wide .field-control {
+  justify-content: stretch;
+}
+
+.prompt-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.field-control .prompt-area {
+  min-height: 200px;
+  max-height: 60vh;
+  font-size: 12.5px;
+  line-height: 1.65;
+  padding: 10px 12px;
+}
+
+.prompt-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.prompt-count {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.prompt-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.prompt-state {
+  font-size: 12px;
+  color: var(--crail);
+}
+
+.prompt-state.is-default {
+  color: var(--ink-soft);
+}
+
 .field-control textarea {
   min-height: 62px;
   resize: vertical;

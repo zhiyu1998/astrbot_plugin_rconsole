@@ -74,6 +74,11 @@ SUMMARY_PROMPT = """# Role: Web Content Summarization Assistant
 ## Init
 在第一次对话中，请直接输出以下：您好！我将联合R插件为您提供简洁明了的网页内容。"""
 
+DEFAULT_SUMMARY_PROMPT = SUMMARY_PROMPT
+DEFAULT_USER_PROMPT_TEMPLATE = (
+    "这是网页链接: {url}\n\n网页正文如下：\n{content}\n\n请根据以上内容进行总结。"
+)
+
 DEFAULT_MAX_CHARS = 30000
 COMMON_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -230,6 +235,20 @@ def estimate_reading_time(text: str, wpm: int = 200) -> Tuple[int, int]:
     return max(1, math.ceil(words / wpm)), words
 
 
+def build_user_prompt(url: str, content: str, template: str = "") -> str:
+    """按用户模板拼 user 提示词；占位符写错或缺 content 时自动兜底/补正文"""
+    tpl = (template or "").strip() or DEFAULT_USER_PROMPT_TEMPLATE
+    data = {"url": url, "content": content}
+    try:
+        out = tpl.format(**data)
+    except (KeyError, IndexError, ValueError):
+        logger.warning("[R插件][AI总结] 用户提示词模板占位符有误，已回退默认模板")
+        out = DEFAULT_USER_PROMPT_TEMPLATE.format(**data)
+    if content and content not in out:
+        out = out.rstrip() + "\n\n" + content
+    return out
+
+
 def extract_title(summary: str, fallback: str = "") -> str:
     match = re.search(r"(?:Title|标题)[:：]\s*(.*?)\n", summary or "")
     if not match:
@@ -304,6 +323,8 @@ async def process_summary_url(
     timeout: float = 120.0,
     use_forward: bool = True,
     text: str = "",
+    system_prompt: str = "",
+    user_prompt: str = "",
 ) -> AsyncGenerator[Any, None]:
     """
     识别并总结一条链接消息。识别不出来直接 return（不影响其它解析器）。
@@ -337,13 +358,14 @@ async def process_summary_url(
         yield event.plain_result(f"{identify_prefix}{name}（AI 总结）失败：{exc}\n{url}")
         return
 
-    prompt = f"这是网页链接: {url}\n\n网页正文如下：\n{content}\n\n请根据以上内容进行总结。"
+    prompt = build_user_prompt(url, content, user_prompt)
+    system = (system_prompt or "").strip() or DEFAULT_SUMMARY_PROMPT
     try:
         logger.info(f"[R插件][AI总结] 使用模型 {model or pid} 总结 {url}（正文 {len(content)} 字符）")
         resp = await context.llm_generate(
             chat_provider_id=pid,
             prompt=prompt,
-            system_prompt=SUMMARY_PROMPT,
+            system_prompt=system,
         )
     except Exception as exc:  # noqa: BLE001
         logger.error(f"[R插件][AI总结] 模型调用失败：{exc}")
