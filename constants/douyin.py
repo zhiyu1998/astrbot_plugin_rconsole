@@ -15,6 +15,23 @@ DOUYIN_VIDEO_API = "https://www.douyin.com/aweme/v1/web/aweme/detail/?device_pla
 # 无水印播放地址（按 video_id 直出）
 DOUYIN_TOUTIAO_API = "https://aweme.snssdk.com/aweme/v1/play/?video_id={}&ratio=1080p&line=0"
 
+# 实测 aweme/v1/play 的 ratio 只认真实存在的三档：1080p / 720p / 540p
+# （480p、360p、4K 之类的值会被服务端当成未知，回落到最高档；空值=直链默认，通常 720p）
+DOUYIN_RATIO_MAP = {
+    "1080P": "1080p",
+    "720P": "720p",
+    "540P": "540p",
+    "AUTO": "",
+}
+DOUYIN_RESOLUTION_ORDER = ("1080P", "720P", "540P", "AUTO")
+# 选档时用于和 bit_rate[].play_addr.height 比较的目标高度（540p 实际是 576 高）
+DOUYIN_TARGET_HEIGHT = {
+    "1080P": 1080,
+    "720P": 720,
+    "540P": 576,
+    "AUTO": 0,
+}
+
 # 分享页 SSR（免 Cookie 兜底，页面内嵌 window._ROUTER_DATA）
 DOUYIN_SHARE_VIDEO_PAGE = "https://www.iesdouyin.com/share/video/{}/"
 DOUYIN_SHARE_NOTE_PAGE = "https://www.iesdouyin.com/share/note/{}/"

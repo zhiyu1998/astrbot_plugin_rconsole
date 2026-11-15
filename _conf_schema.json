@@ -314,6 +314,14 @@
     "default": true,
     "hint": "SSR 页面时灵时不灵（抖音在逐步下线），留着没坏处；关掉后只走 Cookie 接口 + 第三方接口"
   },
+  "DOUYIN_RESOLUTION": {
+    "description": "【抖音】画质档位",
+    "type": "string",
+    "default": "1080P",
+    "options": ["1080P", "720P", "540P", "AUTO"],
+    "labels": ["1080P 高清（最高）", "720P 标清（省流）", "540P 流畅（最省流）", "AUTO 跟随直链默认档"],
+    "hint": "抖音直链服务端的 ratio 只认真实存在的三档：1080P / 720P / 540P（实测 1080P 给出 1080x1920，720P 给出 720x1280，540P 给出 576x1024；源本身没有 1080P 时会自动给到实际最高档）。AUTO = 不指定 ratio，走直链默认档（通常是 720P，与水印直链一致）。"
+  },
   "WEIBO_CK": {
     "description": "【微博】Cookie",
     "type": "string",

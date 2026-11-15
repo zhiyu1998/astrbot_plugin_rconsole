@@ -193,10 +193,11 @@ function renderField(field) {
     control.appendChild(row);
   } else if (field.options && field.options.length) {
     const select = document.createElement("select");
-    field.options.forEach((option) => {
+    const labels = Array.isArray(field.labels) ? field.labels : [];
+    field.options.forEach((option, index) => {
       const item = document.createElement("option");
       item.value = option;
-      item.textContent = option;
+      item.textContent = labels[index] || option;
       if (String(value) === String(option)) item.selected = true;
       select.appendChild(item);
     });

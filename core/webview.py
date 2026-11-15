@@ -131,6 +131,7 @@ def register_view_apis(context, plugin, plugin_name: str) -> None:
                 "type": field.get("type", "string"),
                 "hint": field.get("hint", ""),
                 "options": field.get("options") or [],
+                "labels": field.get("labels") or [],
                 "default": field.get("default"),
                 "value": value,
                 "is_secret": secret,

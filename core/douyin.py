@@ -23,8 +23,10 @@ from ..constants.douyin import (
     DOUYIN_HEADER,
     DOUYIN_ID_REGEXES,
     DOUYIN_ITEM_INFO,
+    DOUYIN_RATIO_MAP,
     DOUYIN_SHARE_NOTE_PAGE,
     DOUYIN_SHARE_VIDEO_PAGE,
+    DOUYIN_TARGET_HEIGHT,
     DOUYIN_THIRD_PARTY,
     DOUYIN_TOUTIAO_API,
     DOUYIN_URL_REGEX,
@@ -96,23 +98,78 @@ def _looks_like_media(url: Any) -> bool:
     return True
 
 
-def _pick_video_url(video: Dict[str, Any]) -> Optional[str]:
+def _ratio_for(resolution: str) -> str:
+    """把配置里的档位名转成 aweme/v1/play 的 ratio 值（空串=直链默认）"""
+    key = str(resolution or "1080P").strip().upper()
+    if key not in DOUYIN_RATIO_MAP:
+        key = "1080P"
+    return DOUYIN_RATIO_MAP[key]
+
+
+def _target_height(resolution: str) -> int:
+    key = str(resolution or "1080P").strip().upper()
+    return DOUYIN_TARGET_HEIGHT.get(key, 1080)
+
+
+def _toutiao_url(uri: str, ratio: str) -> str:
+    url = DOUYIN_TOUTIAO_API.format(uri)
+    return url.replace("ratio=1080p", f"ratio={ratio}")
+
+
+def _pick_from_bit_rates(video: Dict[str, Any], target_height: int) -> Optional[str]:
+    """接口给了 bit_rate 多档时，按高度挑不高于目标的最高码率那档"""
+    best: Optional[Tuple[int, int, str]] = None
+    for rate in video.get("bit_rate") or []:
+        if not isinstance(rate, dict):
+            continue
+        addr = rate.get("play_addr") or {}
+        if not isinstance(addr, dict):
+            continue
+        urls = [u for u in addr.get("url_list") or [] if u and _looks_like_media(u)]
+        if not urls:
+            continue
+        try:
+            height = int(addr.get("height") or 0)
+        except (TypeError, ValueError):
+            height = 0
+        if target_height and height and height > target_height:
+            continue
+        try:
+            bit_rate = int(rate.get("bit_rate") or 0)
+        except (TypeError, ValueError):
+            bit_rate = 0
+        score = (height, bit_rate)
+        if best is None or score > best[0]:
+            best = (score, bit_rate, urls[0].replace("playwm", "play"))
+    return best[2] if best else None
+
+
+def _pick_video_url(video: Dict[str, Any], resolution: str = "1080P") -> Optional[str]:
+    """按分辨率档位挑播放直链
+
+    优先级：
+    1. bit_rate 多档列表（web 接口会给，带 height/bit_rate，最准）
+    2. play_addr.uri → 走 aweme/v1/play 接口，用 ratio 参数指定 1080p/720p/540p
+    3. play_addr.url_list 直链（服务端默认档，通常 720p）
+    """
     if not isinstance(video, dict):
         return None
+    ratio = _ratio_for(resolution)
+    target_height = _target_height(resolution)
+
+    from_rates = _pick_from_bit_rates(video, target_height)
+    if from_rates:
+        return from_rates
+
     for key in ("play_addr", "play_addr_h264", "play_addr_265", "download_addr"):
         addr = video.get(key) or {}
         if not isinstance(addr, dict):
             continue
-        for url in addr.get("url_list") or []:
-            if url and _looks_like_media(url):
-                return url.replace("playwm", "play")
         uri = addr.get("uri")
-        if uri:
-            return DOUYIN_TOUTIAO_API.format(uri)
-    # 部分接口把码率列表放在 bit_rate 里
-    for rate in video.get("bit_rate") or []:
-        play_addr = (rate or {}).get("play_addr") or {}
-        for url in play_addr.get("url_list") or []:
+        # uri 正常是 video_id（v0d00fg10000...），但偶尔会给背景音乐直链，那种不能当 video_id 用
+        if isinstance(uri, str) and uri and not uri.startswith("http"):
+            return _toutiao_url(uri, ratio)
+        for url in addr.get("url_list") or []:
             if url and _looks_like_media(url):
                 return url.replace("playwm", "play")
     return None
@@ -361,6 +418,7 @@ async def process_douyin_url(
     video_size_limit_mb: int = 0,
     image_use_forward: bool = True,
     enable_ssr: bool = True,
+    video_resolution: str = "1080P",
 ) -> AsyncGenerator[Any, None]:
     """抖音链接解析入口"""
     msg = get_message_text(event)
@@ -433,10 +491,11 @@ async def process_douyin_url(
         return
 
     video = item.get("video") or {}
-    play_url = _pick_video_url(video)
+    play_url = _pick_video_url(video, video_resolution)
     if not play_url:
         yield event.plain_result("抖音解析失败：没有拿到视频直链")
         return
+    logger.info(f"[R插件][抖音] 画质档位：{video_resolution}（ratio={_ratio_for(video_resolution) or '默认'}）")
 
     # 有的来源给毫秒，有的给秒，>1000 才当毫秒处理
     raw_duration = video.get("duration") or item.get("duration") or 0

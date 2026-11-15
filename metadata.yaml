@@ -11,7 +11,7 @@ desc: |
   | 平台 | 说明 |
   | --- | --- |
   | 哔哩哔哩 | 视频 / 番剧 / 专栏 / 动态，支持画质选择、BBDown 下载 |
-  | 抖音 | 短视频、图集，无 Cookie 时可走分享页 SSR 兜底 |
+  | 抖音 | 短视频、图集，无 Cookie 时可走分享页 SSR 兜底，支持 1080P/720P/540P 画质档位 |
   | 快手 | 原生页面解析，失败回退第三方接口 |
   | 西瓜视频 / 皮皮虾 / 皮皮搞笑 / QQ小世界 / 即刻 | 依赖第三方解析接口，可在配置里替换 |
   | 微博 | 正文、九宫格、视频、热门评论、投票贴图片 |
@@ -43,7 +43,7 @@ desc: |
   - Telegram 上自动改用「先文字、后媒体」的发送顺序（`TG_SEND_COMPAT`，默认开）
 
   安装后到面板「插件 → R插件」里填 Cookie 即可，XHH_CK（小黑盒）必填，BILI_SESSDATA 影响 B 站画质。
-version: v1.2.9
+version: v1.2.10
 author: zhiyu1998
 repo: https://github.com/zhiyu1998/astrbot_plugin_rconsole
 astrbot_version: ">=4.5.0,<5"

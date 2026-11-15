@@ -45,7 +45,7 @@ from .core.xhs import process_xiaohongshu_url
 from .core.xiaoheihe import process_xiaoheihe_url
 
 PLUGIN_NAME = "astrbot_plugin_rconsole"
-VERSION = "1.2.9"
+VERSION = "1.2.10"
 PLATFORM_ALIASES = {
     "douyin": "抖音",
     "bilibili": "哔哩哔哩",
@@ -79,7 +79,7 @@ _CODEC_ALIAS = {
     "RrOrange",
     "R插件迁移版：抖音/B站/快手/微博/AcFun/小红书/米游社/小黑盒/微视/YouTube/微信视频号 "
     "链接解析 + AI 总结（已适配 Telegram 发送）",
-    "1.2.9",
+    "1.2.10",
 )
 class RPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -157,6 +157,8 @@ class RPlugin(Star):
 
         # 抖音
         self.douyin_enable_ssr = bool(self._cfg("DOUYIN_ENABLE_SSR", True))
+        # 抖音画质档位：1080P / 720P / 540P / AUTO（直链默认档）
+        self.douyin_resolution = str(self._cfg("DOUYIN_RESOLUTION", "1080P") or "1080P")
 
         # 小红书折叠长度（0 = 不折叠）
         self.xhs_desc_len_limit = int(self._cfg("XHS_DESC_LEN_LIMIT", 78) or 0)
@@ -314,6 +316,7 @@ class RPlugin(Star):
             video_size_limit_mb=self.video_size_limit_mb,
             image_use_forward=self.image_use_forward,
             enable_ssr=self.douyin_enable_ssr,
+            video_resolution=self.douyin_resolution,
         ):
             yield result
 
