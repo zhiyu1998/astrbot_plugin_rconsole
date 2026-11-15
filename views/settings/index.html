@@ -28,13 +28,26 @@
 
       <main>
         <section id="tab-settings" class="panel">
-          <div class="toolbar">
-            <input id="search" type="search" placeholder="搜索配置项，例如 代理 / Cookie / 画质…" />
-            <span class="count" id="fieldCount"></span>
+          <div class="layout">
+            <aside class="rail">
+              <div class="rail-search">
+                <input id="search" type="search" placeholder="搜索配置项…" />
+              </div>
+              <nav class="rail-nav" id="rail"></nav>
+              <div class="rail-foot" id="railFoot"></div>
+            </aside>
+
+            <section class="content">
+              <header class="content-head">
+                <h2 id="groupTitle">全局</h2>
+                <span class="count" id="fieldCount"></span>
+              </header>
+              <div id="fields" class="fields">
+                <div class="skeleton">正在加载配置…</div>
+              </div>
+            </section>
           </div>
-          <div id="groups" class="groups">
-            <div class="skeleton">正在加载配置…</div>
-          </div>
+
           <div class="savebar">
             <span id="saveHint" class="hint"></span>
             <button id="resetBtn" class="btn ghost" type="button">放弃修改</button>

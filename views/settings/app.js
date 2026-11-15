@@ -1,10 +1,35 @@
 const bridge = window.AstrBotPluginView || window.AstrBotPluginPage;
 const $ = (sel) => document.querySelector(sel);
+const NL = String.fromCharCode(10);
+
+const GROUP_ICONS = {
+  全局: "⚙️",
+  哔哩哔哩: "📺",
+  抖音: "🎵",
+  快手: "⚡",
+  微博: "🐳",
+  AcFun: "🅰️",
+  小红书: "📕",
+  米游社: "🎮",
+  小黑盒: "🎯",
+  微视: "🎬",
+  YouTube: "▶️",
+  微信视频号: "💚",
+  代理: "🌐",
+  下载: "⬇️",
+  下载与代理: "⬇️",
+  暂存目录: "📁",
+  卡片解析: "🃏",
+  解析: "🔍",
+  展示: "🎨",
+};
 
 const state = {
   groups: [],
-  dirty: new Set(),
-  original: new Map(),
+  active: "",
+  query: "",
+  pending: new Map(),
+  edited: new Set(),
 };
 
 /* ---------------------------------------------------------------- 工具 */
@@ -26,7 +51,38 @@ function escapeHtml(text) {
     .replace(/"/g, "&quot;");
 }
 
+function iconFor(name) {
+  if (GROUP_ICONS[name]) return GROUP_ICONS[name];
+  const hit = Object.keys(GROUP_ICONS).find((key) => name.includes(key));
+  return hit ? GROUP_ICONS[hit] : "🔧";
+}
+
+function fieldValue(field) {
+  return state.pending.has(field.key) ? state.pending.get(field.key) : field.value;
+}
+
+function allFields() {
+  return state.groups.flatMap((group) => group.fields);
+}
+
 /* ---------------------------------------------------------------- 渲染 */
+
+function setPending(field, value) {
+  state.pending.set(field.key, value);
+  if (!state.edited.has(field.key)) {
+    state.edited.add(field.key);
+    paintRail();
+  }
+  markChanged(field.key);
+  const hint = $("#saveHint");
+  hint.textContent = `已修改 ${state.edited.size} 项，未保存`;
+}
+
+function markChanged(key) {
+  document.querySelectorAll(`.field[data-key="${CSS.escape(key)}"]`).forEach((el) => {
+    el.classList.add("changed");
+  });
+}
 
 function renderField(field) {
   const wrap = document.createElement("div");
@@ -35,6 +91,7 @@ function renderField(field) {
   wrap.dataset.search = [field.key, field.label, field.hint, field.group]
     .join(" ")
     .toLowerCase();
+  if (state.edited.has(field.key)) wrap.classList.add("changed");
 
   const labelBox = document.createElement("div");
   labelBox.className = "field-label";
@@ -46,9 +103,10 @@ function renderField(field) {
 
   const control = document.createElement("div");
   control.className = "field-control";
+  const value = fieldValue(field);
 
   if (field.type === "bool") {
-    const on = field.value === true;
+    const on = value === true;
     control.innerHTML = `
       <label class="switch">
         <input type="checkbox" ${on ? "checked" : ""}>
@@ -59,20 +117,29 @@ function renderField(field) {
     const input = control.querySelector("input");
     input.addEventListener("change", () => {
       control.querySelector(".state").textContent = input.checked ? "已开启" : "已关闭";
-      markDirty(field.key);
+      setPending(field, input.checked);
     });
   } else if (field.type === "int" || field.type === "float") {
     const input = document.createElement("input");
     input.type = "number";
     input.step = field.type === "float" ? "0.1" : "1";
-    input.value = field.value ?? field.default ?? 0;
-    input.addEventListener("input", () => markDirty(field.key));
+    input.value = value ?? field.default ?? 0;
+    input.addEventListener("input", () => {
+      const raw = input.value.trim();
+      setPending(field, raw === "" ? null : Number(raw));
+    });
     control.appendChild(input);
   } else if (field.type === "list") {
     const area = document.createElement("textarea");
-    area.value = Array.isArray(field.value) ? field.value.join("\n") : field.value || "";
+    area.value = Array.isArray(value) ? value.join(NL) : value || "";
     area.placeholder = "一行一个";
-    area.addEventListener("input", () => markDirty(field.key));
+    area.addEventListener("input", () => {
+      const lines = area.value
+        .split(/[\r\n]+/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      setPending(field, lines);
+    });
     control.appendChild(area);
   } else if (field.options && field.options.length) {
     const select = document.createElement("select");
@@ -80,10 +147,10 @@ function renderField(field) {
       const item = document.createElement("option");
       item.value = option;
       item.textContent = option;
-      if (String(field.value) === String(option)) item.selected = true;
+      if (String(value) === String(option)) item.selected = true;
       select.appendChild(item);
     });
-    select.addEventListener("change", () => markDirty(field.key));
+    select.addEventListener("change", () => setPending(field, select.value));
     control.appendChild(select);
   } else if (field.is_secret) {
     const row = document.createElement("div");
@@ -92,7 +159,17 @@ function renderField(field) {
     input.type = "password";
     input.autocomplete = "new-password";
     input.placeholder = field.has_value ? "已设置，留空则不修改" : "未设置，粘贴到这里";
-    input.addEventListener("input", () => markDirty(field.key));
+    if (state.pending.has(field.key)) input.value = state.pending.get(field.key);
+    input.addEventListener("input", () => {
+      if (input.value.trim() === "") {
+        state.pending.delete(field.key);
+        state.edited.delete(field.key);
+        $("#saveHint").textContent = state.edited.size ? `已修改 ${state.edited.size} 项，未保存` : "";
+        paintRail();
+      } else {
+        setPending(field, input.value.trim());
+      }
+    });
     row.appendChild(input);
     if (field.has_value) {
       const badge = document.createElement("span");
@@ -104,9 +181,9 @@ function renderField(field) {
   } else {
     const input = document.createElement("input");
     input.type = "text";
-    input.value = field.value ?? "";
+    input.value = value ?? "";
     input.placeholder = field.default ?? "";
-    input.addEventListener("input", () => markDirty(field.key));
+    input.addEventListener("input", () => setPending(field, input.value));
     control.appendChild(input);
   }
 
@@ -115,71 +192,134 @@ function renderField(field) {
   return wrap;
 }
 
-function renderGroups(groups) {
-  const host = $("#groups");
+function paintRail() {
+  const host = $("#rail");
+  if (!host) return;
   host.innerHTML = "";
-  let total = 0;
 
-  groups.forEach((group) => {
-    const card = document.createElement("section");
-    card.className = "group";
-
-    const head = document.createElement("div");
-    head.className = "group-head";
-    head.innerHTML = `
-      <span class="dot"></span>
-      <h2>${escapeHtml(group.name)}</h2>
-      <span class="gcount">${group.fields.length} 项</span>
+  state.groups.forEach((group) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "rail-item";
+    button.dataset.group = group.name;
+    if (!state.query && state.active === group.name) button.classList.add("active");
+    const dirty = group.fields.some((field) => state.edited.has(field.key));
+    button.innerHTML = `
+      <span class="ico">${iconFor(group.name)}</span>
+      <span class="name">${escapeHtml(group.name)}</span>
+      <span class="dirty ${dirty ? "" : "hidden"}"></span>
+      <span class="num">${group.fields.length}</span>
     `;
-    head.addEventListener("click", () => card.classList.toggle("collapsed"));
-
-    const body = document.createElement("div");
-    body.className = "group-body";
-    group.fields.forEach((field) => {
-      body.appendChild(renderField(field));
-      total += 1;
+    button.addEventListener("click", () => {
+      state.query = "";
+      $("#search").value = "";
+      state.active = group.name;
+      renderPanel();
     });
-
-    card.appendChild(head);
-    card.appendChild(body);
-    host.appendChild(card);
+    host.appendChild(button);
   });
 
-  $("#fieldCount").textContent = `共 ${total} 项`;
+  if (state.edited.size) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `rail-item ${state.query === "__edited__" ? "active" : ""}`;
+    button.innerHTML = `
+      <span class="ico">✏️</span>
+      <span class="name">已修改</span>
+      <span class="num">${state.edited.size}</span>
+    `;
+    button.addEventListener("click", () => {
+      state.query = "__edited__";
+      $("#search").value = "";
+      renderPanel();
+    });
+    host.appendChild(button);
+  }
+
+  const total = allFields().length;
+  $("#railFoot").innerHTML = `共 ${total} 项配置 · 当前 ${
+    state.pending.size ? `已改 ${state.pending.size} 项` : "无改动"
+  }`;
 }
 
-function markDirty(key) {
-  state.dirty.add(key);
-  $("#saveHint").textContent = `已修改 ${state.dirty.size} 项，未保存`;
+function groupOf(field) {
+  return state.groups.find((group) => group.fields.includes(field));
 }
 
-function collectValues() {
-  const values = {};
-  document.querySelectorAll(".field").forEach((fieldEl) => {
-    const key = fieldEl.dataset.key;
-    const control = fieldEl.querySelector(".field-control");
-    const boolInput = control.querySelector('.switch input[type="checkbox"]');
-    if (boolInput) {
-      values[key] = boolInput.checked;
+function renderPanel() {
+  const host = $("#fields");
+  const title = $("#groupTitle");
+  const count = $("#fieldCount");
+  host.innerHTML = "";
+
+  const makeSubhead = (text) => {
+    const el = document.createElement("div");
+    el.className = "subhead";
+    el.textContent = text;
+    return el;
+  };
+
+  if (state.query === "__edited__") {
+    const fields = allFields().filter((field) => state.edited.has(field.key));
+    title.textContent = "已修改";
+    count.textContent = `${fields.length} 项`;
+    if (!fields.length) {
+      host.innerHTML = '<div class="skeleton">还没有改动。左侧选择分组开始编辑。</div>';
+      paintRail();
       return;
     }
-    const textarea = control.querySelector("textarea");
-    if (textarea) {
-      values[key] = textarea.value
-        .split("\n")
-        .map((line) => line.trim())
-        .filter(Boolean);
+    let lastGroup = "";
+    fields.forEach((field) => {
+      const group = groupOf(field);
+      if (group && group.name !== lastGroup) {
+        host.appendChild(makeSubhead(group.name));
+        lastGroup = group.name;
+      }
+      host.appendChild(renderField(field));
+    });
+    paintRail();
+    return;
+  }
+
+  if (state.query) {
+    const keyword = state.query.toLowerCase();
+    const hits = allFields().filter((field) =>
+      [field.key, field.label, field.hint, field.group]
+        .join(" ")
+        .toLowerCase()
+        .includes(keyword)
+    );
+    title.textContent = "搜索结果";
+    count.textContent = `${hits.length} 项`;
+    if (!hits.length) {
+      host.innerHTML = `<div class="skeleton">没有匹配「${escapeHtml(state.query)}」的配置项。</div>`;
+      paintRail();
       return;
     }
-    const input = control.querySelector("input, select");
-    if (!input) return;
-    if (input.type === "password") {
-      if (input.value.trim() !== "") values[key] = input.value.trim();
-      return;
-    }
-    values[key] = input.value;
-  });
-  return values;
+    let lastGroup = "";
+    hits.forEach((field) => {
+      const group = groupOf(field);
+      if (group && group.name !== lastGroup) {
+        host.appendChild(makeSubhead(group.name));
+        lastGroup = group.name;
+      }
+      host.appendChild(renderField(field));
+    });
+    paintRail();
+    return;
+  }
+
+  const group = state.groups.find((item) => item.name === state.active) || state.groups[0];
+  if (!group) {
+    host.innerHTML = '<div class="skeleton">配置为空。</div>';
+    paintRail();
+    return;
+  }
+  state.active = group.name;
+  title.textContent = group.name;
+  count.textContent = `${group.fields.length} 项`;
+  group.fields.forEach((field) => host.appendChild(renderField(field)));
+  paintRail();
 }
 
 /* ---------------------------------------------------------------- 数据 */
@@ -188,9 +328,14 @@ async function loadSchema() {
   const data = await bridge.apiGet("view/schema");
   state.groups = data.groups || [];
   if (data.version) $("#versionTag").textContent = `v${data.version}`;
-  renderGroups(state.groups);
+  if (!state.active || !state.groups.some((group) => group.name === state.active)) {
+    const preferred = state.groups.find((group) => group.name === "全局");
+    state.active = (preferred || state.groups[0] || {}).name || "";
+  }
+  state.pending.clear();
+  state.edited.clear();
   $("#saveHint").textContent = "";
-  state.dirty.clear();
+  renderPanel();
 }
 
 function chip(text, kind) {
@@ -323,33 +468,32 @@ function bind() {
     });
   });
 
+  let searchTimer = 0;
   $("#search").addEventListener("input", (event) => {
-    const keyword = event.target.value.trim().toLowerCase();
-    document.querySelectorAll(".group").forEach((group) => {
-      let visible = 0;
-      group.querySelectorAll(".field").forEach((field) => {
-        const hit = !keyword || field.dataset.search.includes(keyword);
-        field.classList.toggle("hidden", !hit);
-        if (hit) visible += 1;
-      });
-      group.classList.toggle("hidden", visible === 0);
-      const counter = group.querySelector(".gcount");
-      if (counter) counter.textContent = `${visible} 项`;
-    });
+    clearTimeout(searchTimer);
+    const value = event.target.value.trim();
+    searchTimer = setTimeout(() => {
+      state.query = value === "__edited__" ? "" : value;
+      renderPanel();
+    }, 90);
   });
 
   $("#saveBtn").addEventListener("click", async () => {
+    if (!state.pending.size) {
+      toast("没有需要保存的修改");
+      return;
+    }
     const button = $("#saveBtn");
     button.disabled = true;
     button.textContent = "保存中…";
     try {
-      const values = collectValues();
+      const values = Object.fromEntries(state.pending);
       const result = await bridge.apiPost("view/save", { values });
       const saved = result.saved || [];
       const applied = result.applied || [];
       toast(`已保存 ${saved.length} 项${applied.length ? `，已热应用 ${applied.length} 项` : ""}`);
-      $("#saveHint").textContent = "";
-      state.dirty.clear();
+      state.pending.clear();
+      state.edited.clear();
       await loadSchema();
       loadStatus().catch(() => {});
     } catch (error) {
@@ -361,6 +505,10 @@ function bind() {
   });
 
   $("#resetBtn").addEventListener("click", async () => {
+    state.pending.clear();
+    state.edited.clear();
+    state.query = "";
+    $("#search").value = "";
     await loadSchema();
     toast("已还原为当前已保存的配置");
   });
@@ -402,7 +550,7 @@ function bind() {
   try {
     await loadSchema();
   } catch (error) {
-    $("#groups").innerHTML = `<div class="skeleton">加载失败：${escapeHtml(error.message)}</div>`;
+    $("#fields").innerHTML = `<div class="skeleton">加载失败：${escapeHtml(error.message)}</div>`;
     return;
   }
   loadStatus().catch(() => {});
