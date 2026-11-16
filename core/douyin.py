@@ -682,14 +682,30 @@ def _live_shop_text(room: Dict[str, Any]) -> str:
     return "主播挂着小黄车" if room.get("has_commerce_goods") else ""
 
 
-def _live_cover(room: Dict[str, Any]) -> str:
-    cover = room.get("cover") or {}
-    if isinstance(cover, dict):
-        urls = [u for u in cover.get("url_list") or [] if u]
-        if urls:
-            return urls[0]
-    if isinstance(cover, str) and cover.startswith("http"):
-        return cover
+def _live_cover(room: Dict[str, Any], detail: Optional[Dict[str, Any]] = None) -> str:
+    """
+    直播封面：web 端 cover.url_list → reflow 端 cover.url_list → 主播头像兜底。
+
+    两个接口的封面签名链接都能直接用（Referer 要是 live.douyin.com），
+    web 端缺封面（个别主播没设）时就退回头像，至少别让文案光秃秃的。
+    """
+    sources: List[Any] = [room.get("cover")]
+    if isinstance(detail, dict):
+        sources.append(detail.get("cover"))
+    for cover in sources:
+        if isinstance(cover, dict):
+            urls = [u for u in cover.get("url_list") or [] if u]
+            if urls:
+                return urls[0]
+        elif isinstance(cover, str) and cover.startswith("http"):
+            return cover
+
+    for source in (room, detail if isinstance(detail, dict) else {}):
+        thumb = (source.get("owner") or {}).get("avatar_thumb") or {}
+        if isinstance(thumb, dict):
+            urls = [u for u in thumb.get("url_list") or [] if u]
+            if urls:
+                return urls[0]
     return ""
 
 
@@ -699,12 +715,12 @@ async def _process_douyin_live(
     *,
     douyin_ck: str,
     identify_prefix: str,
-    display_cover: bool,
     stream_duration: int,
     stream_compat: bool,
     video_size_limit_mb: int,
     video_resolution: str,
     display_detail: bool = True,
+    live_cover: bool = True,
 ) -> AsyncGenerator[Any, None]:
     """抖音直播：房间信息 → 封面文字 → 录 N 秒流 → 转 mp4 → 发视频"""
     room: Optional[Dict[str, Any]] = None
@@ -756,7 +772,7 @@ async def _process_douyin_live(
         tip = "已结束" if status == 4 else "暂未开播"
         yield await cover_text_result(
             event,
-            _live_cover(room) if display_cover else "",
+            _live_cover(room, detail) if live_cover else "",
             "\n".join([*lines, f"💤 该直播{tip}，等主播开播再来试试～"]),
             referer="https://live.douyin.com/",
             prefix="dy_live_cover",
@@ -778,7 +794,7 @@ async def _process_douyin_live(
 
     yield await cover_text_result(
         event,
-        _live_cover(room) if display_cover else "",
+        _live_cover(room, detail) if live_cover else "",
         "\n".join(lines),
         referer="https://live.douyin.com/",
         prefix="dy_live_cover",
@@ -851,6 +867,7 @@ async def process_douyin_url(
     stream_duration: int = 10,
     stream_compat: bool = True,
     live_detail: bool = True,
+    live_cover: bool = True,
 ) -> AsyncGenerator[Any, None]:
     """抖音链接解析入口（作品/图集/直播）"""
     msg = get_message_text(event)
@@ -877,12 +894,12 @@ async def process_douyin_url(
             dou_url,
             douyin_ck=douyin_ck,
             identify_prefix=identify_prefix,
-            display_cover=display_cover,
             stream_duration=stream_duration,
             stream_compat=stream_compat,
             video_size_limit_mb=video_size_limit_mb,
             video_resolution=video_resolution,
             display_detail=live_detail,
+            live_cover=live_cover,
         ):
             yield result
         return

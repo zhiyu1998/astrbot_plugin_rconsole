@@ -166,6 +166,7 @@ class RPlugin(Star):
         self.douyin_live_duration = int(self._cfg("DOUYIN_LIVE_DURATION", 10) or 10)
         self.douyin_live_compat = bool(self._cfg("DOUYIN_LIVE_COMPAT", True))
         self.douyin_live_detail = bool(self._cfg("DOUYIN_LIVE_DETAIL", True))
+        self.douyin_live_cover = bool(self._cfg("DOUYIN_LIVE_COVER", True))
 
         # 小红书折叠长度（0 = 不折叠）
         self.xhs_desc_len_limit = int(self._cfg("XHS_DESC_LEN_LIMIT", 78) or 0)
@@ -327,6 +328,7 @@ class RPlugin(Star):
             stream_duration=self.douyin_live_duration,
             stream_compat=self.douyin_live_compat,
             live_detail=self.douyin_live_detail,
+            live_cover=self.douyin_live_cover,
         ):
             yield result
 
