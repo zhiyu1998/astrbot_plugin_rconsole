@@ -318,7 +318,7 @@
     "description": "【抖音】显示封面",
     "type": "bool",
     "default": true,
-    "hint": "关闭后只发文字信息"
+    "hint": "关闭后只发文字信息；直播间链接同样跟随这个开关，关掉就不带直播间封面"
   },
   "DOUYIN_ENABLE_SSR": {
     "description": "【抖音】启用分享页 SSR 兜底",
@@ -345,18 +345,6 @@
     "type": "bool",
     "default": true,
     "hint": "录下来的是 FLV，部分客户端（QQ / Telegram）不认。开启后用 ffmpeg 无损转封装成 MP4 再发；关掉或没装 ffmpeg 就直接发 flv"
-  },
-  "DOUYIN_LIVE_DETAIL": {
-    "description": "【抖音】直播信息补全（开播时间/抖音号/涨粉）",
-    "type": "bool",
-    "default": true,
-    "hint": "开播时间、主播抖音号、认证标识、本场涨粉只有客户端 reflow 接口才有（会多一次约 70KB 的请求）。关掉就只展示标题、主播、分区、在线人数、累计观看、点赞这些 web 端自带的信息"
-  },
-  "DOUYIN_LIVE_COVER": {
-    "description": "【抖音】直播发封面图",
-    "type": "bool",
-    "default": true,
-    "hint": "在直播间文案上方带一张直播间封面（接口自带签名链接，取不到时退回头像）。作品/图集的封面还是由「显示封面」单独控制"
   },
   "WEIBO_CK": {
     "description": "【微博】Cookie",

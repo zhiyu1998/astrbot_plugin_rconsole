@@ -715,12 +715,11 @@ async def _process_douyin_live(
     *,
     douyin_ck: str,
     identify_prefix: str,
+    display_cover: bool,
     stream_duration: int,
     stream_compat: bool,
     video_size_limit_mb: int,
     video_resolution: str,
-    display_detail: bool = True,
-    live_cover: bool = True,
 ) -> AsyncGenerator[Any, None]:
     """抖音直播：房间信息 → 封面文字 → 录 N 秒流 → 转 mp4 → 发视频"""
     room: Optional[Dict[str, Any]] = None
@@ -749,7 +748,7 @@ async def _process_douyin_live(
         return
 
     # 开播时间 / 抖音号 / 认证 / 本场涨粉只有客户端 reflow 接口给，多一次请求换更完整的信息
-    if display_detail and room_id and not detail:
+    if room_id and not detail:
         detail = await _fetch_live_room_by_reflow(room_id, douyin_ck) or {}
 
     title = truncate_str(str(room.get("title") or "抖音直播"), 100)
@@ -772,7 +771,7 @@ async def _process_douyin_live(
         tip = "已结束" if status == 4 else "暂未开播"
         yield await cover_text_result(
             event,
-            _live_cover(room, detail) if live_cover else "",
+            _live_cover(room, detail) if display_cover else "",
             "\n".join([*lines, f"💤 该直播{tip}，等主播开播再来试试～"]),
             referer="https://live.douyin.com/",
             prefix="dy_live_cover",
@@ -794,7 +793,7 @@ async def _process_douyin_live(
 
     yield await cover_text_result(
         event,
-        _live_cover(room, detail) if live_cover else "",
+        _live_cover(room, detail) if display_cover else "",
         "\n".join(lines),
         referer="https://live.douyin.com/",
         prefix="dy_live_cover",
@@ -866,8 +865,6 @@ async def process_douyin_url(
     video_resolution: str = "1080P",
     stream_duration: int = 10,
     stream_compat: bool = True,
-    live_detail: bool = True,
-    live_cover: bool = True,
 ) -> AsyncGenerator[Any, None]:
     """抖音链接解析入口（作品/图集/直播）"""
     msg = get_message_text(event)
@@ -894,12 +891,11 @@ async def process_douyin_url(
             dou_url,
             douyin_ck=douyin_ck,
             identify_prefix=identify_prefix,
+            display_cover=display_cover,
             stream_duration=stream_duration,
             stream_compat=stream_compat,
             video_size_limit_mb=video_size_limit_mb,
             video_resolution=video_resolution,
-            display_detail=live_detail,
-            live_cover=live_cover,
         ):
             yield result
         return
