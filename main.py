@@ -165,6 +165,7 @@ class RPlugin(Star):
         # 抖音直播：录多少秒 + 是否把 flv 转成 mp4
         self.douyin_live_duration = int(self._cfg("DOUYIN_LIVE_DURATION", 10) or 10)
         self.douyin_live_compat = bool(self._cfg("DOUYIN_LIVE_COMPAT", True))
+        self.douyin_live_detail = bool(self._cfg("DOUYIN_LIVE_DETAIL", True))
 
         # 小红书折叠长度（0 = 不折叠）
         self.xhs_desc_len_limit = int(self._cfg("XHS_DESC_LEN_LIMIT", 78) or 0)
@@ -325,6 +326,7 @@ class RPlugin(Star):
             video_resolution=self.douyin_resolution,
             stream_duration=self.douyin_live_duration,
             stream_compat=self.douyin_live_compat,
+            live_detail=self.douyin_live_detail,
         ):
             yield result
 

@@ -10,6 +10,7 @@
 只负责「解析 + 发送」，评论、直播录制、背景音乐、SSR Cookie 注册等重逻辑不进第一版。
 """
 
+import datetime
 import json
 import os
 import re
@@ -473,8 +474,15 @@ def _pick_live_room(payload: Any) -> Optional[Dict[str, Any]]:
     return None
 
 
-async def _fetch_live_room_by_web(web_rid: str, cookie: str) -> Optional[Dict[str, Any]]:
-    """web 端进入房间（对应 R 插件的 DY_LIVE_INFO，第一类直播链接）"""
+async def _fetch_live_room_by_web(
+    web_rid: str, cookie: str
+) -> Optional[Tuple[Dict[str, Any], Dict[str, Any]]]:
+    """
+    web 端进入房间（对应 R 插件的 DY_LIVE_INFO，第一类直播链接）
+
+    返回 (room, data)：data 是响应的 data 段，带着 room 对象里没有的字段
+    —— enter_room_id（真实 room_id）和 partition_road_map（分区/游戏分类）。
+    """
     headers = {
         "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2",
         "User-Agent": DOUYIN_HEADER["User-Agent"],
@@ -488,7 +496,8 @@ async def _fetch_live_room_by_web(web_rid: str, cookie: str) -> Optional[Dict[st
     data = await fetch_json(api, headers=headers, timeout=20)
     room = _pick_live_room(data)
     if room:
-        return room
+        inner = data.get("data") if isinstance(data, dict) else None
+        return room, (inner if isinstance(inner, dict) else {})
     logger.warning("[R插件][抖音直播] 进入房间接口返回空（通常是缺 ttwid 或被风控）")
     return None
 
@@ -546,16 +555,131 @@ def _pick_live_stream(room: Dict[str, Any], resolution: str = "AUTO") -> Optiona
     return None
 
 
-def _live_viewer_text(room: Dict[str, Any]) -> str:
-    count = room.get("user_count_str")
-    if not count:
-        raw = room.get("user_count")
+def _human_count(value: Any) -> str:
+    """数字转「1234 / 1.2万 / 1.2亿」，转不出来给空串（宁可少一行也不要 0）"""
+    try:
+        num = float(value or 0)
+    except (TypeError, ValueError):
+        return ""
+    if num <= 0:
+        return ""
+    if num >= 100000000:
+        text = f"{num / 100000000:.1f}亿"
+    elif num >= 10000:
+        text = f"{num / 10000:.1f}万"
+    else:
+        return str(int(num))
+    return text.replace(".0万", "万").replace(".0亿", "亿")
+
+
+def _live_online_text(room: Dict[str, Any]) -> str:
+    """
+    在线人数。
+
+    web 端有两套口径：room.user_count_str（"4w+"，接口算好的口语值）和
+    room.room_view_stats（display_short / display_value 精确值）。
+    优先用 room_view_stats 的精确值，拿不到才回退接口的原话。
+    """
+    stats = room.get("room_view_stats")
+    if isinstance(stats, dict) and not stats.get("is_hidden"):
+        for key in ("display_short_anchor", "display_short"):
+            value = str(stats.get(key) or "").strip()
+            if value and value != "0":
+                return value
+        precise = _human_count(stats.get("display_value"))
+        if precise:
+            return precise
+    return str(room.get("user_count_str") or "").strip() or "未知"
+
+
+def _live_anchor_tag(room: Dict[str, Any], detail: Dict[str, Any]) -> str:
+    """主播名 + 抖音号 + 认证，抖音号/认证只有 reflow 接口才有"""
+    owner = room.get("owner") if isinstance(room.get("owner"), dict) else {}
+    deep = detail.get("owner") if isinstance(detail.get("owner"), dict) else {}
+    nickname = str(owner.get("nickname") or deep.get("nickname") or "").strip()
+    extra: List[str] = []
+    display_id = str(deep.get("display_id") or "").strip()
+    if display_id:
+        extra.append(f"@{display_id}")
+    if deep.get("verified"):
+        extra.append("已认证")
+    if nickname and extra:
+        return f"{nickname}（{'，'.join(extra)}）"
+    return nickname
+
+
+def _live_partition_text(room: Dict[str, Any], enter_data: Dict[str, Any]) -> str:
+    """分区 + 游戏名：主分类在响应的 partition_road_map，游戏名在 room.game_data"""
+    parts: List[str] = []
+    road = enter_data.get("partition_road_map") if isinstance(enter_data, dict) else None
+    if isinstance(road, dict):
+        main = str((road.get("partition") or {}).get("title") or "").strip()
+        if main:
+            parts.append(main)
+    game = room.get("game_data") if isinstance(room.get("game_data"), dict) else {}
+    tag = str((game.get("game_tag_info") or {}).get("game_tag_name") or "").strip()
+    if tag:
+        parts.append(tag)
+    return " · ".join(dict.fromkeys(p for p in parts if p))
+
+
+def _live_started_text(detail: Dict[str, Any]) -> str:
+    """开播时间 + 已播时长。create_time 只有 reflow 接口给，web 端没有"""
+    try:
+        started = int(detail.get("create_time") or 0)
+    except (TypeError, ValueError):
+        started = 0
+    if started <= 0:
+        return ""
+    try:
+        clock = datetime.datetime.fromtimestamp(started).strftime("%H:%M")
+    except (OverflowError, OSError, ValueError):
+        return ""
+    elapsed = int((datetime.datetime.now().timestamp() - started) / 60)
+    if elapsed < 1:
+        span = "刚开始"
+    elif elapsed < 60:
+        span = f"{elapsed} 分钟"
+    elif elapsed % 60:
+        span = f"{elapsed // 60} 小时 {elapsed % 60} 分"
+    else:
+        span = f"{elapsed // 60} 小时"
+    return f"{clock}（已播 {span}）"
+
+
+def _live_stats_text(room: Dict[str, Any], detail: Dict[str, Any]) -> str:
+    """累计观看 + 本场涨粉：reflow 端是精确值（实测比 web 端的 "10万+" 更新），web 端只做兜底"""
+    web_stats = room.get("stats") if isinstance(room.get("stats"), dict) else {}
+    deep_stats = detail.get("stats") if isinstance(detail.get("stats"), dict) else {}
+    watched = _human_count(deep_stats.get("total_user")) or str(
+        web_stats.get("total_user_str") or ""
+    ).strip()
+    bits: List[str] = []
+    if watched:
+        bits.append(f"累计观看：{watched}")
+    follows = _human_count(deep_stats.get("follow_count"))
+    if follows:
+        bits.append(f"本场涨粉：{follows}")
+    return " · ".join(bits)
+
+
+def _live_like_text(room: Dict[str, Any], detail: Dict[str, Any]) -> str:
+    """点赞数：web 端 room.like_count（1266093），reflow 端同名字段"""
+    for source in (room, detail):
+        if not isinstance(source, dict):
+            continue
         try:
-            num = int(raw or 0)
+            num = int(source.get("like_count") or 0)
         except (TypeError, ValueError):
             num = 0
-        count = f"{num / 10000:.1f}w" if num >= 10000 else str(num)
-    return f"{count}人正在观看"
+        if num > 0:
+            return _human_count(num)
+    return ""
+
+
+def _live_shop_text(room: Dict[str, Any]) -> str:
+    """带货小黄车：has_commerce_goods 为真才算，ecom_data 只有电商配置不代表挂了商品"""
+    return "主播挂着小黄车" if room.get("has_commerce_goods") else ""
 
 
 def _live_cover(room: Dict[str, Any]) -> str:
@@ -580,31 +704,49 @@ async def _process_douyin_live(
     stream_compat: bool,
     video_size_limit_mb: int,
     video_resolution: str,
+    display_detail: bool = True,
 ) -> AsyncGenerator[Any, None]:
     """抖音直播：房间信息 → 封面文字 → 录 N 秒流 → 转 mp4 → 发视频"""
     room: Optional[Dict[str, Any]] = None
+    enter_data: Dict[str, Any] = {}
+    detail: Dict[str, Any] = {}
 
     web_rid = _extract_live_web_rid(dou_url)
     room_id = _extract_live_room_id(dou_url)
 
     if web_rid:
-        room = await _fetch_live_room_by_web(web_rid, douyin_ck)
+        got = await _fetch_live_room_by_web(web_rid, douyin_ck)
+        if got:
+            room, enter_data = got
+            # enter_room_id 就是真实 room_id，比从页面正则抠更靠谱
+            room_id = room_id or str(enter_data.get("enter_room_id") or "")
     if not room and room_id:
         room = await _fetch_live_room_by_reflow(room_id, douyin_ck)
+        detail = room or {}
     if not room and web_rid:
         # 万一 webcast 短链跳转后 still 是 reflow 结构
         room = await _fetch_live_room_by_reflow(web_rid, douyin_ck)
+        detail = room or {}
 
     if not room:
         yield event.plain_result("抖音直播解析失败，可能需要配置 Cookie，或接口风控了，稍后再试试")
         return
 
+    # 开播时间 / 抖音号 / 认证 / 本场涨粉只有客户端 reflow 接口给，多一次请求换更完整的信息
+    if display_detail and room_id and not detail:
+        detail = await _fetch_live_room_by_reflow(room_id, douyin_ck) or {}
+
     title = truncate_str(str(room.get("title") or "抖音直播"), 100)
-    owner = room.get("owner") or {}
-    nickname = owner.get("nickname") if isinstance(owner, dict) else ""
-    header = f"{identify_prefix}抖音直播，{title}"
-    if nickname:
-        header += f"\n🎙️ 主播：{nickname}"
+    lines = [f"{identify_prefix}抖音直播，{title}"]
+    anchor = _live_anchor_tag(room, detail)
+    if anchor:
+        lines.append(f"🎙️ 主播：{anchor}")
+    partition = _live_partition_text(room, enter_data)
+    if partition:
+        lines.append(f"🎮 分区：{partition}")
+    started = _live_started_text(detail)
+    if started:
+        lines.append(f"⏰ 开播：{started}")
 
     try:
         status = int(room.get("status") or 0)
@@ -615,16 +757,29 @@ async def _process_douyin_live(
         yield await cover_text_result(
             event,
             _live_cover(room) if display_cover else "",
-            f"{header}\n💤 该直播{tip}，等主播开播再来试试～",
+            "\n".join([*lines, f"💤 该直播{tip}，等主播开播再来试试～"]),
             referer="https://live.douyin.com/",
             prefix="dy_live_cover",
         )
         return
 
+    lines.append(f"🏄‍♂️ 在线人数：{_live_online_text(room)}人正在观看")
+    stats_line = _live_stats_text(room, detail)
+    if stats_line:
+        lines.append(f"👀 {stats_line}")
+    likes = _live_like_text(room, detail)
+    if likes:
+        lines.append(f"👍 点赞：{likes}")
+    shop = _live_shop_text(room)
+    if shop:
+        lines.append(f"🛒 带货：{shop}")
+    if web_rid:
+        lines.append(f"🔗 直播间：{DOUYIN_LIVE_PAGE.format(web_rid)}")
+
     yield await cover_text_result(
         event,
         _live_cover(room) if display_cover else "",
-        f"{header}\n🏄‍♂️ 在线人数：{_live_viewer_text(room)}",
+        "\n".join(lines),
         referer="https://live.douyin.com/",
         prefix="dy_live_cover",
     )
@@ -695,6 +850,7 @@ async def process_douyin_url(
     video_resolution: str = "1080P",
     stream_duration: int = 10,
     stream_compat: bool = True,
+    live_detail: bool = True,
 ) -> AsyncGenerator[Any, None]:
     """抖音链接解析入口（作品/图集/直播）"""
     msg = get_message_text(event)
@@ -726,6 +882,7 @@ async def process_douyin_url(
             stream_compat=stream_compat,
             video_size_limit_mb=video_size_limit_mb,
             video_resolution=video_resolution,
+            display_detail=live_detail,
         ):
             yield result
         return

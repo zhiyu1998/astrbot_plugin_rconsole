@@ -118,6 +118,7 @@ Cookie 获取：浏览器登录对应网站 → `F12` → **Network** → 随便
 | --- | --- | --- |
 | `DOUYIN_LIVE_DURATION` | 10 | 抖音直播录制秒数 |
 | `DOUYIN_LIVE_COMPAT` | true | 录完转 MP4（关掉则原样发 FLV） |
+| `DOUYIN_LIVE_DETAIL` | true | 补全抖音直播信息：开播时间 / 抖音号 / 认证 / 本场涨粉（多一次约 70KB 请求） |
 | `BILI_LIVE_DURATION` | 10 | B站直播录制秒数 |
 | `BILI_LIVE_COMPAT` | true | 录完转 MP4（关掉则原样发 FLV） |
 
