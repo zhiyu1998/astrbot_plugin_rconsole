@@ -16,13 +16,19 @@ from bilibili_api.opus import Opus
 from bilibili_api.video import VideoDownloadURLDataDetecter
 
 from .common import (
+    build_temp_path,
     cache_dir,
+    convert_flv_to_mp4,
+    cover_text_result,
     delete_boring_characters,
     delete_file,
+    download_stream_segment,
+    fetch_json,
     limit_notice,
     local_image,
     release_video,
     remove_files,
+    truncate_str,
     video_components,
 )
 from ..constants.bili23 import *
@@ -309,6 +315,195 @@ async def run_bbdown(
     raise RuntimeError("BBDown 执行完成但没找到 mp4 文件")
 
 
+# ---------------------------------------------------------------- 直播
+
+
+def _extract_live_room_id(url: str) -> str:
+    """从 live.bilibili.com/1708071230 里抠直播间号"""
+    path = url.split("?")[0].rstrip("/")
+    match = re.search(r"/(\d+)$", path)
+    if match:
+        return match.group(1)
+    # 短号形式 live.bilibili.com/blanc/1708071230 之类
+    match = re.search(r"live\.bilibili\.com/([A-Za-z0-9]+)$", path)
+    return match.group(1) if match else ""
+
+
+def _bili_live_headers(cookie: str = "") -> dict:
+    headers = dict(BILIBILI_HEADER)
+    headers["referer"] = "https://live.bilibili.com/"
+    if cookie:
+        headers["cookie"] = cookie
+    return headers
+
+
+async def _fetch_bili_live_info(room_id: str, cookie: str = "") -> dict:
+    """
+    直播间信息（对应 R 插件的 getBiliStreamInfo）。
+
+    先走官方 room/v1/Room/get_info（快、字段全），挂了再退回 bilibili_api。
+    """
+    data = await fetch_json(BILI_LIVE_INFO.format(room_id), headers=_bili_live_headers(cookie), timeout=15)
+    if isinstance(data, dict) and data.get("code") == 0 and isinstance(data.get("data"), dict):
+        return data["data"]
+    logger.warning(f"[R插件][B站直播] get_info 接口异常（code={data.get('code') if isinstance(data, dict) else '?'}），改用 bilibili_api")
+    room = live.LiveRoom(room_display_id=int(room_id))
+    payload = await room.get_room_info()
+    return payload.get("room_info") or {}
+
+
+async def _fetch_bili_live_stream(room_id: str, quality: int = 4, cookie: str = "") -> str:
+    """
+    直播流地址（对应 R 插件的 getBiliStream）。
+
+    quality 4=原画 3=蓝光 2=超清 1=高清 0=流畅；原画没权限（未登录/需要粉丝牌）就逐档降级。
+    """
+    for qn in (quality, 3, 2, 1, 0):
+        data = await fetch_json(
+            BILI_LIVE_PLAY_URL.format(room_id, qn), headers=_bili_live_headers(cookie), timeout=15
+        )
+        if not isinstance(data, dict) or data.get("code") != 0:
+            continue
+        durl = ((data.get("data") or {}).get("durl")) or []
+        if durl and isinstance(durl[0], dict):
+            url = durl[0].get("url")
+            if isinstance(url, str) and url.startswith("http"):
+                logger.info(f"[R插件][B站直播] 使用 quality={qn} 的直播流")
+                return url
+    return ""
+
+
+def _bili_live_quality(resolution: str) -> int:
+    """
+    把 BILI_RESOLUTION 的中文档位名换成直播 playUrl 的 quality 参数。
+
+    直播只有 5 档（4 原画 / 3 蓝光 / 2 超清 / 1 高清 / 0 流畅），
+    比视频的 qn 粗得多，所以按档位名归并即可。
+    """
+    text = str(resolution or "")
+    if not text or "自动" in text or "8K" in text or "杜比" in text or "HDR" in text or "4K" in text or "1080" in text:
+        return BILI_LIVE_QUALITY_MAX
+    if "720" in text:
+        return 3
+    if "480" in text:
+        return 2
+    if "360" in text:
+        return 1
+    return BILI_LIVE_QUALITY_MAX
+
+
+def _bili_live_text(info: dict, room_id: str, identify_prefix: str) -> str:
+    """拼直播间文案（照 R 插件的字段顺序来）"""
+    title = truncate_str(str(info.get("title") or "哔哩哔哩直播"), 100)
+    lines = [f"{identify_prefix}哔哩哔哩直播，{title}"]
+
+    desc = str(info.get("description") or "").replace("&lt;p&gt;", "").replace("&lt;/p&gt;", "").strip()
+    if desc:
+        lines.append(f"📝 简述：{truncate_str(desc, 120)}")
+    tags = str(info.get("tags") or "").strip()
+    if tags:
+        lines.append(f"🔖 标签：{truncate_str(tags, 80)}")
+    parent_area = str(info.get("parent_area_name") or "").strip()
+    area = str(info.get("area_name") or "").strip()
+    if parent_area or area:
+        lines.append(f"📍 分区：{parent_area}{'-' + area if area and parent_area else area}")
+    live_time = str(info.get("live_time") or "").strip()
+    if live_time and live_time != "0000-00-00 00:00:00":
+        lines.append(f"⏰ 直播时间：{live_time}")
+    online = info.get("online")
+    if online is not None:
+        lines.append(f"🏄‍♂️ 人气：{online}")
+    lines.append(
+        "📺 独立播放器: "
+        f"https://www.bilibili.com/blackboard/live/live-activity-player.html?enterTheRoom=0&cid={room_id}"
+    )
+    return "\n".join(lines)
+
+
+async def _process_bili_live(
+    event: AstrMessageEvent,
+    url: str,
+    *,
+    cookie: str = "",
+    identify_prefix: str = "识别：",
+    display_cover: bool = True,
+    stream_duration: int = 10,
+    stream_compat: bool = True,
+    video_size_limit_mb: int = 0,
+    resolution: str = "1080P",
+):
+    """B 站直播：房间信息 → 封面文案 → 录 N 秒流 → 转 mp4 → 发视频"""
+    room_id = _extract_live_room_id(url)
+    if not room_id:
+        yield event.plain_result("无法识别直播间ID。")
+        return
+
+    try:
+        info = await _fetch_bili_live_info(room_id, cookie)
+    except Exception as exc:  # noqa: BLE001
+        yield event.plain_result(f"B站直播间解析失败: {exc}")
+        return
+    if not info:
+        yield event.plain_result("B站直播间解析失败：接口没有返回房间信息")
+        return
+
+    text = _bili_live_text(info, room_id, identify_prefix)
+    cover = str(info.get("user_cover") or info.get("keyframe") or "")
+    yield await cover_text_result(
+        event,
+        cover if display_cover else "",
+        text,
+        referer="https://live.bilibili.com/",
+        prefix="bili_live_cover",
+    )
+
+    try:
+        live_status = int(info.get("live_status") or 0)
+    except (TypeError, ValueError):
+        live_status = 0
+    if live_status != BILI_LIVE_STATUS_LIVING:
+        tip = "轮播中" if live_status == 2 else "未开播"
+        yield event.plain_result(f"该直播间当前{tip}，等主播开播再来试试～")
+        return
+
+    quality = _bili_live_quality(resolution)
+    stream_url = await _fetch_bili_live_stream(room_id, quality, cookie)
+    if not stream_url:
+        yield event.plain_result("B站直播没有拿到直播流地址（可能需要登录 Cookie 才能取原画），稍后再试试")
+        return
+
+    seconds = max(3, min(int(stream_duration or 10), 120))
+    logger.info(f"[R插件][B站直播] 开始录 {seconds} 秒直播流")
+    path = await download_stream_segment(
+        stream_url,
+        build_temp_path("bili_live", ".flv"),
+        seconds=seconds,
+        headers=BILIBILI_HEADER,
+        referer="https://live.bilibili.com/",
+    )
+    if not path:
+        yield event.plain_result("B站直播录制失败，可能是直播流地址过期了，稍后再试试")
+        return
+
+    if stream_compat:
+        mp4_path = await convert_flv_to_mp4(path)
+        if mp4_path:
+            delete_file(path)
+            path = mp4_path
+        else:
+            logger.warning("[R插件][B站直播] flv 转 mp4 失败（没装 ffmpeg？），直接发 flv")
+
+    components = video_components(path, "bili_live.mp4", video_size_limit_mb)
+    if components:
+        yield event.chain_result(components)
+        release_video(path)
+    else:
+        delete_file(path)
+        yield event.plain_result(
+            f"直播片段已录好但超过 {video_size_limit_mb}MB 发送上限，已跳过\n原链接：{url}"
+        )
+
+
 async def process_bilibili_url(
     event: AstrMessageEvent,
     credential: Credential,
@@ -325,6 +520,9 @@ async def process_bilibili_url(
     bbdown_path: str = "BBDown",
     cdn: str = "不使用",
     bbdown_aria2c: bool = False,
+    identify_prefix: str = "识别：",
+    live_duration: int = 10,
+    live_compat: bool = True,
 ):
     """
         核心代码：处理B站链接
@@ -417,26 +615,20 @@ async def process_bilibili_url(
             return
     # ================== 直播间解析 ==================
     if 'live.bilibili.com' in url:
-        try:
-            room_id_match = re.search(r'\/(\d+)', url.split('?')[0])
-            if not room_id_match:
-                yield event.plain_result("无法识别直播间ID。")
-                return
-
-            room_id = int(room_id_match.group(1))
-            room = live.LiveRoom(room_display_id=room_id)
-            room_info = (await room.get_room_info())['room_info']
-            title, cover, keyframe = room_info['title'], room_info['cover'], room_info['keyframe']
-
-            yield event.chain_result([
-                Comp.Plain(f"识别：哔哩哔哩直播\n标题：{title}"),
-                Comp.Image.fromURL(cover),
-                Comp.Image.fromURL(keyframe)
-            ])
-            return
-        except Exception as e:
-            yield event.plain_result(f"B站直播间解析失败: {e}")
-            return
+        sessdata = getattr(credential, "sessdata", "") or ""
+        async for result in _process_bili_live(
+            event,
+            url,
+            cookie=f"SESSDATA={sessdata}" if sessdata else "",
+            identify_prefix=identify_prefix,
+            display_cover=display_cover,
+            stream_duration=live_duration,
+            stream_compat=live_compat,
+            video_size_limit_mb=video_size_limit_mb,
+            resolution=resolution,
+        ):
+            yield result
+        return
 
     # ================== 专栏解析 ==================
     if '/read/cv' in url:

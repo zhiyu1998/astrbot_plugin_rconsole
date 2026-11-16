@@ -16,6 +16,7 @@ import re
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 
 import astrbot.api.message_components as Comp
+import httpx
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 
@@ -23,6 +24,11 @@ from ..constants.douyin import (
     DOUYIN_HEADER,
     DOUYIN_ID_REGEXES,
     DOUYIN_ITEM_INFO,
+    DOUYIN_LIVE_ENTER_API,
+    DOUYIN_LIVE_PAGE,
+    DOUYIN_LIVE_QUALITY_ORDER,
+    DOUYIN_LIVE_REFLOW_API,
+    DOUYIN_LIVE_STATUS_LIVING,
     DOUYIN_RATIO_MAP,
     DOUYIN_SHARE_NOTE_PAGE,
     DOUYIN_SHARE_VIDEO_PAGE,
@@ -34,10 +40,12 @@ from ..constants.douyin import (
 )
 from .common import (
     build_temp_path,
+    convert_flv_to_mp4,
     cover_text_result,
     delete_file,
     download_file,
     download_images,
+    download_stream_segment,
     fetch_json,
     fetch_text,
     get_message_text,
@@ -402,10 +410,276 @@ async def _resolve_detail(url: str, aweme_id: str, cookie: str, enable_ssr: bool
     return None
 
 
+# ---------------------------------------------------------------- 直播
+
+LIVE_PAGE_HEADERS = {
+    "User-Agent": DOUYIN_HEADER["User-Agent"],
+    "Accept-Language": "zh-CN,zh;q=0.9",
+    "Referer": "https://www.douyin.com/",
+}
+
+
+def _merge_cookie(*cookie_texts: str) -> str:
+    """把多段 Cookie 字符串合并成一段（后面的同名键覆盖前面的）"""
+    jar: Dict[str, str] = {}
+    for raw in cookie_texts:
+        for part in str(raw or "").split(";"):
+            part = part.strip()
+            if not part or "=" not in part:
+                continue
+            key, value = part.split("=", 1)
+            jar[key.strip()] = value.strip()
+    return "; ".join(f"{k}={v}" for k, v in jar.items() if k)
+
+
+def _extract_live_web_rid(url: str) -> str:
+    match = re.search(r"live\.douyin\.com/(\d+)", url)
+    return match.group(1) if match else ""
+
+
+def _extract_live_room_id(url: str) -> str:
+    match = re.search(r"reflow/(\d+)", url)
+    return match.group(1) if match else ""
+
+
+async def _live_cookie_with_ttwid(web_rid: str, cookie: str) -> str:
+    """
+    先访问一次直播间页面，把服务端下发的 ttwid 合并进 Cookie。
+
+    实测：不带 Cookie 直接请求进入房间接口，HTTP 200 但 body 是空的（长度 0），
+    带上页面给的 ttwid 才有 data.data[0] —— 这就是 R 插件里「必须填 Cookie」的真正原因，
+    其实只需要一个游客 ttwid，配置里的登录 Cookie 只是加分项。
+    """
+    page_cookie = ""
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=15.0) as client:
+            await client.get(DOUYIN_LIVE_PAGE.format(web_rid), headers=LIVE_PAGE_HEADERS)
+            page_cookie = "; ".join(f"{k}={v}" for k, v in client.cookies.items())
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[R插件][抖音直播] 取 ttwid 失败（继续用配置 Cookie）: {exc}")
+    return _merge_cookie(cookie, page_cookie)
+
+
+def _pick_live_room(payload: Any) -> Optional[Dict[str, Any]]:
+    """从进入房间接口的响应里抠出 room 对象"""
+    if not isinstance(payload, dict):
+        return None
+    rooms = ((payload.get("data") or {}).get("data")) or []
+    if isinstance(rooms, dict):
+        rooms = [rooms]
+    for room in rooms:
+        if isinstance(room, dict) and (room.get("stream_url") or room.get("title")):
+            return room
+    return None
+
+
+async def _fetch_live_room_by_web(web_rid: str, cookie: str) -> Optional[Dict[str, Any]]:
+    """web 端进入房间（对应 R 插件的 DY_LIVE_INFO，第一类直播链接）"""
+    headers = {
+        "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2",
+        "User-Agent": DOUYIN_HEADER["User-Agent"],
+        "Referer": DOUYIN_LIVE_PAGE.format(web_rid),
+        "cookie": await _live_cookie_with_ttwid(web_rid, cookie),
+    }
+    api = DOUYIN_LIVE_ENTER_API.format(web_rid, "")
+    abogus = generate_a_bogus(urllib.parse.urlparse(api).query, headers["User-Agent"])
+    if abogus:
+        api = f"{api}&a_bogus={urllib.parse.quote(abogus, safe='')}"
+    data = await fetch_json(api, headers=headers, timeout=20)
+    room = _pick_live_room(data)
+    if room:
+        return room
+    logger.warning("[R插件][抖音直播] 进入房间接口返回空（通常是缺 ttwid 或被风控）")
+    return None
+
+
+async def _fetch_live_room_by_reflow(room_id: str, cookie: str) -> Optional[Dict[str, Any]]:
+    """客户端 reflow 接口（对应 R 插件的 DY_LIVE_INFO_2，第二类直播链接）"""
+    headers = {
+        "User-Agent": DOUYIN_HEADER["User-Agent"],
+        "Accept-Language": "zh-CN,zh;q=0.9",
+        "cookie": cookie,
+    }
+    data = await fetch_json(DOUYIN_LIVE_REFLOW_API.format(room_id), headers=headers, timeout=20)
+    if isinstance(data, dict):
+        room = (data.get("data") or {}).get("room")
+        if isinstance(room, dict) and (room.get("stream_url") or room.get("title")):
+            return room
+    return None
+
+
+def _pick_live_stream(room: Dict[str, Any], resolution: str = "AUTO") -> Optional[str]:
+    """
+    挑直播流地址。
+
+    优先级：FLV（R 插件走的就是 flv，录片段最省事）→ HLS 兜底。
+    清晰度按 DOUYIN_LIVE_QUALITY_ORDER 依次尝试，缺档自动降级。
+    """
+    stream_url = room.get("stream_url") or {}
+    if not isinstance(stream_url, dict):
+        return None
+    flv_map = stream_url.get("flv_pull_url") or {}
+    hls_map = stream_url.get("hls_pull_url_map") or {}
+    if not isinstance(flv_map, dict):
+        flv_map = {}
+    if not isinstance(hls_map, dict):
+        hls_map = {}
+    # 老结构是 hls_pull_url 单条直链
+    hls_single = stream_url.get("hls_pull_url")
+
+    order = DOUYIN_LIVE_QUALITY_ORDER.get(
+        str(resolution or "AUTO").strip().upper(), DOUYIN_LIVE_QUALITY_ORDER["AUTO"]
+    )
+    for quality in order:
+        url = flv_map.get(quality)
+        if isinstance(url, str) and url.startswith("http"):
+            logger.info(f"[R插件][抖音直播] 使用 FLV {quality} 档")
+            return url
+    for quality in order:
+        url = hls_map.get(quality)
+        if isinstance(url, str) and url.startswith("http"):
+            logger.info(f"[R插件][抖音直播] 使用 HLS {quality} 档")
+            return url
+    if isinstance(hls_single, str) and hls_single.startswith("http"):
+        logger.info("[R插件][抖音直播] 使用 HLS 单直链")
+        return hls_single
+    return None
+
+
+def _live_viewer_text(room: Dict[str, Any]) -> str:
+    count = room.get("user_count_str")
+    if not count:
+        raw = room.get("user_count")
+        try:
+            num = int(raw or 0)
+        except (TypeError, ValueError):
+            num = 0
+        count = f"{num / 10000:.1f}w" if num >= 10000 else str(num)
+    return f"{count}人正在观看"
+
+
+def _live_cover(room: Dict[str, Any]) -> str:
+    cover = room.get("cover") or {}
+    if isinstance(cover, dict):
+        urls = [u for u in cover.get("url_list") or [] if u]
+        if urls:
+            return urls[0]
+    if isinstance(cover, str) and cover.startswith("http"):
+        return cover
+    return ""
+
+
+async def _process_douyin_live(
+    event: AstrMessageEvent,
+    dou_url: str,
+    *,
+    douyin_ck: str,
+    identify_prefix: str,
+    display_cover: bool,
+    stream_duration: int,
+    stream_compat: bool,
+    video_size_limit_mb: int,
+    video_resolution: str,
+) -> AsyncGenerator[Any, None]:
+    """抖音直播：房间信息 → 封面文字 → 录 N 秒流 → 转 mp4 → 发视频"""
+    room: Optional[Dict[str, Any]] = None
+
+    web_rid = _extract_live_web_rid(dou_url)
+    room_id = _extract_live_room_id(dou_url)
+
+    if web_rid:
+        room = await _fetch_live_room_by_web(web_rid, douyin_ck)
+    if not room and room_id:
+        room = await _fetch_live_room_by_reflow(room_id, douyin_ck)
+    if not room and web_rid:
+        # 万一 webcast 短链跳转后 still 是 reflow 结构
+        room = await _fetch_live_room_by_reflow(web_rid, douyin_ck)
+
+    if not room:
+        yield event.plain_result("抖音直播解析失败，可能需要配置 Cookie，或接口风控了，稍后再试试")
+        return
+
+    title = truncate_str(str(room.get("title") or "抖音直播"), 100)
+    owner = room.get("owner") or {}
+    nickname = owner.get("nickname") if isinstance(owner, dict) else ""
+    header = f"{identify_prefix}抖音直播，{title}"
+    if nickname:
+        header += f"\n🎙️ 主播：{nickname}"
+
+    try:
+        status = int(room.get("status") or 0)
+    except (TypeError, ValueError):
+        status = 0
+    if status != DOUYIN_LIVE_STATUS_LIVING:
+        tip = "已结束" if status == 4 else "暂未开播"
+        yield await cover_text_result(
+            event,
+            _live_cover(room) if display_cover else "",
+            f"{header}\n💤 该直播{tip}，等主播开播再来试试～",
+            referer="https://live.douyin.com/",
+            prefix="dy_live_cover",
+        )
+        return
+
+    yield await cover_text_result(
+        event,
+        _live_cover(room) if display_cover else "",
+        f"{header}\n🏄‍♂️ 在线人数：{_live_viewer_text(room)}",
+        referer="https://live.douyin.com/",
+        prefix="dy_live_cover",
+    )
+
+    stream_url = _pick_live_stream(room, video_resolution)
+    if not stream_url:
+        yield event.plain_result("抖音直播没有拿到直播流地址（可能刚下播），稍后再试试")
+        return
+
+    seconds = max(3, min(int(stream_duration or 10), 120))
+    logger.info(f"[R插件][抖音直播] 开始录 {seconds} 秒直播流")
+    path = await download_stream_segment(
+        stream_url,
+        build_temp_path("douyin_live", ".flv"),
+        seconds=seconds,
+        headers={"User-Agent": DOUYIN_HEADER["User-Agent"]},
+        referer="https://live.douyin.com/",
+    )
+    if not path:
+        yield event.plain_result("抖音直播录制失败，可能是直播流地址过期了，稍后再试试")
+        return
+
+    # 录到的是 flv：多数客户端（QQ / Telegram）不认，转成 mp4 再发
+    if stream_compat:
+        mp4_path = await convert_flv_to_mp4(path)
+        if mp4_path:
+            delete_file(path)
+            path = mp4_path
+        else:
+            logger.warning("[R插件][抖音直播] flv 转 mp4 失败（没装 ffmpeg？），直接发 flv")
+
+    components = video_components(path, "douyin_live.mp4", video_size_limit_mb)
+    if components:
+        yield event.chain_result(components)
+        release_video(path)
+    else:
+        delete_file(path)
+        yield event.plain_result(
+            f"直播片段已录好但超过 {video_size_limit_mb}MB 发送上限，已跳过\n原链接：{dou_url}"
+        )
+
+
 def _describe(item: Dict[str, Any]) -> Tuple[str, str]:
     author = ((item.get("author") or {}).get("nickname")) or "抖音用户"
     desc = item.get("desc") or "无简介"
     return author, truncate_str(desc, 200)
+
+
+def _is_live_url(url: str) -> bool:
+    return (
+        "live.douyin.com" in url
+        or "/live/" in url
+        or "webcast.amemv.com" in url
+        or "reflow/" in url
+    )
 
 
 async def process_douyin_url(
@@ -419,8 +693,10 @@ async def process_douyin_url(
     image_use_forward: bool = True,
     enable_ssr: bool = True,
     video_resolution: str = "1080P",
+    stream_duration: int = 10,
+    stream_compat: bool = True,
 ) -> AsyncGenerator[Any, None]:
-    """抖音链接解析入口"""
+    """抖音链接解析入口（作品/图集/直播）"""
     msg = get_message_text(event)
     if not msg:
         return
@@ -438,13 +714,25 @@ async def process_douyin_url(
         dou_url = await resolve_redirect(dou_url, headers={"User-Agent": DOUYIN_HEADER["User-Agent"]})
         logger.info(f"[R插件][抖音] 跳转后: {dou_url}")
 
+    # 直播：先走直播链路，别掉进作品解析
+    if _is_live_url(dou_url):
+        async for result in _process_douyin_live(
+            event,
+            dou_url,
+            douyin_ck=douyin_ck,
+            identify_prefix=identify_prefix,
+            display_cover=display_cover,
+            stream_duration=stream_duration,
+            stream_compat=stream_compat,
+            video_size_limit_mb=video_size_limit_mb,
+            video_resolution=video_resolution,
+        ):
+            yield result
+        return
+
     aweme_id = _extract_aweme_id(dou_url)
     if not aweme_id:
         yield event.plain_result("抖音链接识别失败，请确认是有效的作品链接")
-        return
-
-    if "live.douyin.com" in dou_url or "/live/" in dou_url:
-        yield event.plain_result(f"{identify_prefix}抖音直播\n第一版暂不支持直播流解析，可以先发作品链接～")
         return
 
     try:

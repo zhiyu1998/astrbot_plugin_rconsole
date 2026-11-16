@@ -154,11 +154,17 @@ class RPlugin(Star):
         self.bili_use_bbdown = bool(self._cfg("BILI_USE_BBDOWN", False))
         self.bbdown_path = str(self._cfg("BBDOWN_PATH", "BBDown") or "BBDown")
         self.bili_cdn = str(self._cfg("BILI_CDN", "不使用") or "不使用")
+        # B站直播：录多少秒 + 是否把 flv 转成 mp4
+        self.bili_live_duration = int(self._cfg("BILI_LIVE_DURATION", 10) or 10)
+        self.bili_live_compat = bool(self._cfg("BILI_LIVE_COMPAT", True))
 
         # 抖音
         self.douyin_enable_ssr = bool(self._cfg("DOUYIN_ENABLE_SSR", True))
         # 抖音画质档位：1080P / 720P / 540P / AUTO（直链默认档）
         self.douyin_resolution = str(self._cfg("DOUYIN_RESOLUTION", "1080P") or "1080P")
+        # 抖音直播：录多少秒 + 是否把 flv 转成 mp4
+        self.douyin_live_duration = int(self._cfg("DOUYIN_LIVE_DURATION", 10) or 10)
+        self.douyin_live_compat = bool(self._cfg("DOUYIN_LIVE_COMPAT", True))
 
         # 小红书折叠长度（0 = 不折叠）
         self.xhs_desc_len_limit = int(self._cfg("XHS_DESC_LEN_LIMIT", 78) or 0)
@@ -317,6 +323,8 @@ class RPlugin(Star):
             image_use_forward=self.image_use_forward,
             enable_ssr=self.douyin_enable_ssr,
             video_resolution=self.douyin_resolution,
+            stream_duration=self.douyin_live_duration,
+            stream_compat=self.douyin_live_compat,
         ):
             yield result
 
@@ -380,6 +388,9 @@ class RPlugin(Star):
             bbdown_path=self.bbdown_path,
             cdn=self.bili_cdn,
             bbdown_aria2c=self.bbdown_aria2c,
+            identify_prefix=self.identify_prefix,
+            live_duration=self.bili_live_duration,
+            live_compat=self.bili_live_compat,
         ):
             yield result
 
@@ -497,7 +508,7 @@ class RPlugin(Star):
 
     @filter.regex(
         r".*(mp\.weixin\.qq\.com|arxiv\.org|sspai\.com|bilibili\.com/read|zhihu\.com/question"
-        r"|chinadaily\.com\.cn|github\.com|v2ex\.com/t|#总结一下).*"
+        r"|chinadaily\.com\.cn|github\.com|v2ex\.com/t|总结一下).*"
     )
     async def ai_summary(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
         if not self.summary_enabled or not self._enabled("summary"):

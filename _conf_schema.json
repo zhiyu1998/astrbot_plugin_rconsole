@@ -223,6 +223,18 @@
     "default": false,
     "hint": "给 BBDown 加 --use-aria2c（需要服务器装 aria2）；不开则由 BBDown 自己单线程下载"
   },
+  "BILI_LIVE_DURATION": {
+    "description": "【哔哩哔哩】直播录制时长（秒）",
+    "type": "int",
+    "default": 10,
+    "hint": "发直播间链接时录一段直播流发出来。直播是无限长的流，必须自己掐断；建议 5~30 秒"
+  },
+  "BILI_LIVE_COMPAT": {
+    "description": "【哔哩哔哩】直播片段转 MP4（兼容模式）",
+    "type": "bool",
+    "default": true,
+    "hint": "B站直播流是 FLV，部分客户端不认。开启后用 ffmpeg 无损转封装成 MP4 再发；关掉或没装 ffmpeg 就直接发 flv"
+  },
   "YOUTUBE_DURATION": {
     "description": "【YouTube】独立时长上限（秒）",
     "type": "int",
@@ -322,6 +334,18 @@
     "labels": ["1080P 高清（最高）", "720P 标清（省流）", "540P 流畅（最省流）", "AUTO 跟随直链默认档"],
     "hint": "抖音直链服务端的 ratio 只认真实存在的三档：1080P / 720P / 540P（实测 1080P 给出 1080x1920，720P 给出 720x1280，540P 给出 576x1024；源本身没有 1080P 时会自动给到实际最高档）。AUTO = 不指定 ratio，走直链默认档（通常是 720P，与水印直链一致）。"
   },
+  "DOUYIN_LIVE_DURATION": {
+    "description": "【抖音】直播录制时长（秒）",
+    "type": "int",
+    "default": 10,
+    "hint": "发直播间链接时录一段直播流发出来。抖音直播是 FLV 长流（没有固定时长），所以必须自己掐断；建议 5~30 秒，太长了文件体积和发送耗时都吃不消"
+  },
+  "DOUYIN_LIVE_COMPAT": {
+    "description": "【抖音】直播片段转 MP4（兼容模式）",
+    "type": "bool",
+    "default": true,
+    "hint": "录下来的是 FLV，部分客户端（QQ / Telegram）不认。开启后用 ffmpeg 无损转封装成 MP4 再发；关掉或没装 ffmpeg 就直接发 flv"
+  },
   "WEIBO_CK": {
     "description": "【微博】Cookie",
     "type": "string",
@@ -365,7 +389,7 @@
     "description": "【AI 总结】启用 AI 总结",
     "type": "bool",
     "default": true,
-    "hint": "开启后，发送 微信文章 / ArXiv / 少数派 / B站专栏 / 知乎问题 / ChinaDaily / GitHub / V2EX 链接会自动抓正文并让大模型总结；也可直接发「#总结一下 链接」",
+    "hint": "开启后，发送 微信文章 / ArXiv / 少数派 / B站专栏 / 知乎问题 / ChinaDaily / GitHub / V2EX 链接会自动抓正文并让大模型总结；也可直接发「总结一下 链接」（开头的 # 或 / 可有可无）",
     "obvious_hint": true
   },
   "SUMMARY_PROVIDER_ID": {

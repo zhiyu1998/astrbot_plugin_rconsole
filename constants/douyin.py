@@ -42,6 +42,43 @@ DOUYIN_ITEM_INFO = "https://www.iesdouyin.com/web/api/v2/aweme/iteminfo/?item_id
 # 第三方兜底接口
 DOUYIN_THIRD_PARTY = "https://api.xingzhige.com/API/douyin/?url={}"
 
+# ---------------------------------------------------------------- 直播
+
+# 直播间页面（先访问一次拿 ttwid，接口不带 ttwid 会返回空 body）
+DOUYIN_LIVE_PAGE = "https://live.douyin.com/{}"
+
+# 直播进入房间（web 端，对应 R 插件的 DY_LIVE_INFO）
+# web_rid = live.douyin.com/{web_rid} 里的那串数字
+DOUYIN_LIVE_ENTER_API = (
+    "https://live.douyin.com/webcast/room/web/enter/"
+    "?device_platform=webapp&aid=6383&channel=channel_pc_web&pc_client_type=1"
+    "&version_code=190500&version_name=19.5.0&cookie_enabled=true"
+    "&screen_width=1920&screen_height=1080&browser_language=zh-CN&browser_platform=Win32"
+    "&browser_name=Firefox&browser_version=124.0&browser_online=true"
+    "&engine_name=Gecko&engine_version=122.0.0.0&os_name=Windows&os_version=10"
+    "&cpu_core_num=12&device_memory=8&platform=PC"
+    "&web_rid={}&room_id_str={}"
+)
+
+# 直播房间信息（客户端 reflow，对应 R 插件的 DY_LIVE_INFO_2）
+# room_id = webcast.amemv.com/douyin/webcast/reflow/{room_id} 里的那串长数字
+DOUYIN_LIVE_REFLOW_API = (
+    "https://webcast.amemv.com/webcast/room/reflow/info/"
+    "?type_id=0&live_id=1&sec_user_id=&version_code=99.99.99&app_id=1128&room_id={}"
+)
+
+# 直播画质优先级：配置档位 → 依次尝试的清晰度键
+# FULL_HD1 = 蓝光/原画，HD1 = 高清（R 插件默认档），SD1/SD2 = 标清/流畅
+DOUYIN_LIVE_QUALITY_ORDER = {
+    "1080P": ("FULL_HD1", "HD1", "SD1", "SD2"),
+    "720P": ("HD1", "SD1", "SD2", "FULL_HD1"),
+    "540P": ("SD1", "SD2", "HD1", "FULL_HD1"),
+    "AUTO": ("HD1", "FULL_HD1", "SD1", "SD2"),
+}
+
+# 直播状态：2 = 正在直播，4 = 已结束，其余按未开播处理
+DOUYIN_LIVE_STATUS_LIVING = 2
+
 # URL类型代码字典
 URL_TYPE_CODE_DICT = {
     # 抖音/Douyin

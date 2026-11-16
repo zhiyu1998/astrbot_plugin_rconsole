@@ -7,7 +7,7 @@
 <div align="center">
 <h1>astrbot_plugin_rconsole</h1>
 <p>
-<a href="https://github.com/zhiyu1998/astrbot_plugin_rconsole/releases"><img src="https://img.shields.io/badge/version-v1.2.7-2f6f5e" alt="Version v1.2.7"></a>
+<a href="https://github.com/zhiyu1998/astrbot_plugin_rconsole/releases"><img src="https://img.shields.io/badge/version-v1.2.11-2f6f5e" alt="Version v1.2.11"></a>
 <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-%3E%3D3.10-3776ab" alt="Python 3.10+"></a>
 <a href="https://astrbot.app/"><img src="https://img.shields.io/badge/AstrBot-plugin-4c78a8" alt="AstrBot Plugin"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-2f6f5e" alt="AGPL-3.0 License"></a>
@@ -106,12 +106,30 @@ Cookie 获取：浏览器登录对应网站 → `F12` → **Network** → 随便
 
 其余配置项（画质、时长上限、合并转发、下载并发、代理等）都在面板里，装好后按需调整即可。
 
+### 直播链接（录一小段发视频）
+
+抖音 `https://live.douyin.com/<web_rid>`、B站 `https://live.bilibili.com/<room_id>` 直接丢进群里就行，插件会：
+
+1. 取直播间信息（标题 / 主播 / 在线人数或人气 / 开播时间 / 封面）；
+2. 从直播流里录 `N` 秒（默认 10 秒）后主动断开，相当于「录屏一小段」；
+3. 默认调用 ffmpeg 转成 MP4 再发视频（部分客户端不认裸 FLV，所以默认开着）。
+
+| 配置项 | 默认 | 说明 |
+| --- | --- | --- |
+| `DOUYIN_LIVE_DURATION` | 10 | 抖音直播录制秒数 |
+| `DOUYIN_LIVE_COMPAT` | true | 录完转 MP4（关掉则原样发 FLV） |
+| `BILI_LIVE_DURATION` | 10 | B站直播录制秒数 |
+| `BILI_LIVE_COMPAT` | true | 录完转 MP4（关掉则原样发 FLV） |
+
+录制秒数越大文件越大，体积上限统一由 `VIDEO_SIZE_LIMIT_MB`（以及各平台 `*_DURATION`）兜底；
+直播是持续流，插件只取开头这一段，不会一直录下去。
+
 ## 功能列表
 
 | 平台 | 状态 | 说明 |
 | --- | :---: | --- |
-| 哔哩哔哩 | ✅ | 视频 / 番剧 / 专栏 / 动态 |
-| 抖音 | ✅ | 短视频、图集；无 Cookie 时走分享页 SSR 兜底；画质档位可选 1080P/720P/540P |
+| 哔哩哔哩 | ✅ | 视频 / 番剧 / 专栏 / 动态；**直播**可录流发视频 |
+| 抖音 | ✅ | 短视频、图集；无 Cookie 时走分享页 SSR 兜底；画质档位可选 1080P/720P/540P；**直播**可录流发视频（FULL_HD1/HD1/SD1 按档位回退） |
 | 快手 | ✅ | 原生页面解析，失败回退第三方接口 |
 | 西瓜视频 / 皮皮虾 / 皮皮搞笑 / QQ小世界 / 即刻 | ⚠️ | 依赖第三方解析接口，可在面板里替换 |
 | 微博 | ✅ | 正文、九宫格、视频、热门评论、投票贴图片 |

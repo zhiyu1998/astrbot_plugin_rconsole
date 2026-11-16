@@ -552,7 +552,10 @@ async def probe_media_url(
         return False
     req_headers = {"User-Agent": "Mozilla/5.0", **(headers or {})}
     if referer:
-        req_headers.setdefault("Referer", referer)
+        # headers 里可能带了大小写不同的 referer，先清掉再写，避免同时发出两个 Referer
+        for key in [k for k in req_headers if k.lower() == "referer"]:
+            req_headers.pop(key, None)
+        req_headers["Referer"] = referer
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
             resp = await client.head(url, headers=req_headers)
@@ -593,7 +596,10 @@ async def download_file(
     ensure_dir(os.path.dirname(path) or TEMP_DIR)
     req_headers = {"User-Agent": "Mozilla/5.0", **(headers or {})}
     if referer:
-        req_headers.setdefault("Referer", referer)
+        # headers 里可能带了大小写不同的 referer，先清掉再写，避免同时发出两个 Referer
+        for key in [k for k in req_headers if k.lower() == "referer"]:
+            req_headers.pop(key, None)
+        req_headers["Referer"] = referer
 
     seg_threads = _DOWNLOAD_THREADS if threads is None else max(0, int(threads))
 
@@ -640,6 +646,62 @@ async def download_file(
             return None
 
 
+async def download_stream_segment(
+    url: str,
+    path: str,
+    *,
+    seconds: float = 10.0,
+    headers: Optional[Dict[str, str]] = None,
+    referer: Optional[str] = None,
+    proxy: Optional[str] = None,
+    min_bytes: int = 64 * 1024,
+) -> Optional[str]:
+    """
+    录一段直播流（对应 R 插件的 sendStreamSegment）。
+
+    直播流是无限长的，所以不按 Content-Length 下，而是「录够 seconds 秒就主动断开」：
+    * 到点直接跳出 `async for`，httpx 关闭连接（服务端会当成观众正常离开）
+    * 中途超时/断流不算失败，只要已经落盘够 min_bytes 就算成功
+    """
+    if not url:
+        return None
+    ensure_dir(os.path.dirname(path) or TEMP_DIR)
+    req_headers = {"User-Agent": "Mozilla/5.0", **(headers or {})}
+    if referer:
+        # headers 里可能带了大小写不同的 referer，先清掉再写，避免同时发出两个 Referer
+        for key in [k for k in req_headers if k.lower() == "referer"]:
+            req_headers.pop(key, None)
+        req_headers["Referer"] = referer
+
+    deadline = time.monotonic() + max(1.0, float(seconds))
+    total = 0
+    try:
+        # 读超时给足：直播流是持续有数据的，卡住才说明链接废了
+        async with _httpx_client(max(20.0, seconds + 15), proxy) as client:
+            async with client.stream("GET", url, headers=req_headers) as resp:
+                if resp.status_code >= 400:
+                    logger.warning(f"[R插件] 直播流 {url[:80]} 状态码 {resp.status_code}")
+                    return None
+                with open(path, "wb") as fp:
+                    async for chunk in resp.aiter_bytes(65536):
+                        if not chunk:
+                            continue
+                        fp.write(chunk)
+                        total += len(chunk)
+                        if time.monotonic() >= deadline:
+                            break
+    except Exception as exc:  # noqa: BLE001
+        # 到点关闭连接、读流被掐断都会走到这里，只要有数据就继续
+        logger.debug(f"[R插件] 直播流读取结束（{total} 字节）: {exc}")
+
+    if not os.path.exists(path) or os.path.getsize(path) < min_bytes:
+        logger.warning(f"[R插件] 直播流太短（{os.path.getsize(path) if os.path.exists(path) else 0} 字节），丢弃")
+        delete_file(path)
+        return None
+    logger.info(f"[R插件] 录到直播流 {total / 1024 / 1024:.1f}MB / {seconds}秒")
+    return path
+
+
 async def download_images(
     urls: Sequence[str],
     *,
@@ -669,7 +731,10 @@ async def download_images(
 def _run_ffmpeg(args: List[str], timeout: int = 300) -> bool:
     try:
         proc = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-loglevel", "error", *args],
+            # -nostdin：不读标准输入。ffmpeg 在 stdin 是终端时会开键盘交互模式，
+            # 机器人进程挂在 tty 上跑就会被卡死（直播转封装踩过这个坑）
+            ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", *args],
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             timeout=timeout,
