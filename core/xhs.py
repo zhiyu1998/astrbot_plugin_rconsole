@@ -1,3 +1,4 @@
+import datetime
 import re
 import os
 import json
@@ -238,6 +239,13 @@ def extract_note_info(note_data: Dict[str, Any]) -> Dict[str, Any]:
                 "height": (img or {}).get("height", 0),
             })
 
+    tags: List[str] = []
+    for tag in note_data.get("tagList") or []:
+        if isinstance(tag, dict):
+            name = _pick_str(tag, "name")
+            if name:
+                tags.append(name)
+
     video_info = {"url": "", "cover": ""}
     if note_type == "video":
         video_info["url"] = _pick_video_url(note_data)
@@ -263,6 +271,7 @@ def extract_note_info(note_data: Dict[str, Any]) -> Dict[str, Any]:
             "share_count": _num("shareCount"),
         },
         "images": image_list,
+        "tags": tags,
         "video": video_info,
     }
 
@@ -323,6 +332,102 @@ def pick_note_from_state(state: Dict[str, Any], xhs_id: str) -> Optional[Dict[st
         note = entry.get("note")
         return note if isinstance(note, dict) else entry
     return None
+
+
+def format_count(value: Any) -> str:
+    """互动数量：1.2万 / 3.5亿 这种口语写法，0 或无效返回空串"""
+    try:
+        count = int(value)
+    except (TypeError, ValueError):
+        return ""
+    if count <= 0:
+        return ""
+    if count >= 100000000:
+        return f"{count / 100000000:.1f}亿".replace(".0亿", "亿")
+    if count >= 10000:
+        return f"{count / 10000:.1f}万".replace(".0万", "万")
+    return str(count)
+
+
+def format_publish_time(timestamp_ms: Any) -> str:
+    """笔记发布时间：毫秒时间戳 → '2026-10-24 15:22（24 天前）'"""
+    try:
+        seconds = int(timestamp_ms) / 1000
+    except (TypeError, ValueError):
+        return ""
+    if seconds <= 0:
+        return ""
+    try:
+        published = datetime.datetime.fromtimestamp(seconds)
+    except (OverflowError, OSError, ValueError):
+        return ""
+
+    now = datetime.datetime.now()
+    delta = (now - published).total_seconds()
+    if delta < 60:
+        relative = "刚刚"
+    elif delta < 3600:
+        relative = f"{int(delta // 60)} 分钟前"
+    elif delta < 86400:
+        relative = f"{int(delta // 3600)} 小时前"
+    elif delta < 86400 * 30:
+        relative = f"{int(delta // 86400)} 天前"
+    else:
+        relative = f"{int(delta // 86400 // 30)} 个月前"
+
+    stamp = published.strftime("%Y-%m-%d %H:%M")
+    return f"{stamp}（{relative}）"
+
+
+def build_note_lines(note_data: Dict[str, Any], header: str) -> List[str]:
+    """把笔记里的作者/类型/属地/时间/标签/互动拼成文案行（第一行是识别头）"""
+    lines = [header]
+
+    user = note_data.get("user") or {}
+    nickname = str(user.get("nickname") or "").strip()
+    if nickname:
+        lines.append(f"👤 作者：{nickname}")
+
+    content_type = note_data.get("type") or "normal"
+    image_count = len(note_data.get("images") or [])
+    if content_type == "video":
+        lines.append("🎬 类型：视频")
+    elif image_count:
+        lines.append(f"🖼️ 类型：图文 · {image_count} 张")
+    else:
+        lines.append("📝 类型：文字")
+
+    location = str(note_data.get("location") or "").strip()
+    if location:
+        lines.append(f"📍 IP 属地：{location}")
+
+    published = format_publish_time(note_data.get("time"))
+    if published:
+        lines.append(f"🕒 发布：{published}")
+
+    tags = [str(tag) for tag in (note_data.get("tags") or []) if str(tag).strip()]
+    if tags:
+        shown = " / ".join(tags[:6])
+        if len(tags) > 6:
+            shown += f" 等 {len(tags)} 个"
+        lines.append(f"🏷️ 标签：{shown}")
+
+    stats = note_data.get("stats") or {}
+    counters = [
+        ("👍 点赞", format_count(stats.get("like_count"))),
+        ("⭐ 收藏", format_count(stats.get("collect_count"))),
+        ("💬 评论", format_count(stats.get("comment_count"))),
+        ("🔁 分享", format_count(stats.get("share_count"))),
+    ]
+    counter_text = " · ".join(f"{name} {value}" for name, value in counters if value)
+    if counter_text:
+        lines.append(counter_text)
+
+    note_id = str(note_data.get("note_id") or "").strip()
+    if note_id:
+        lines.append(f"🔗 原文：https://www.xiaohongshu.com/explore/{note_id}")
+
+    return lines
 
 
 async def process_xiaohongshu_url(
@@ -455,13 +560,16 @@ async def process_xiaohongshu_url(
     #   <描述前 78 字…>
     # 描述超长时，再补一条合并转发放全文，避免正文被截断后看不到
     header = f"{identify_prefix}小红书, {note_title}"
+    lines = build_note_lines(note_data, header)
     # desc_len_limit <= 0 表示不折叠，直接发全文
     limit = XHS_DESC_LEN_LIMIT if desc_len_limit is None else int(desc_len_limit)
     if limit <= 0:
         preview_desc = note_desc
     else:
         preview_desc = truncate_str(note_desc, limit)
-    preview_text = f"{header}\n{preview_desc}" if preview_desc else header
+    preview_text = "\n".join(lines)
+    if preview_desc:
+        preview_text = f"{preview_text}\n\n{preview_desc}"
 
     # 视频笔记用首图当封面，顺带验证视觉上不那么空
     cover_comp = None
