@@ -423,11 +423,23 @@ def build_note_lines(note_data: Dict[str, Any], header: str) -> List[str]:
     if counter_text:
         lines.append(counter_text)
 
-    note_id = str(note_data.get("note_id") or "").strip()
-    if note_id:
-        lines.append(f"🔗 原文：https://www.xiaohongshu.com/explore/{note_id}")
-
     return lines
+
+
+def is_noise_desc(desc: str) -> bool:
+    """
+    正文是不是「纯链接垃圾」。
+
+    很多搬运号正文就是「来源 + 一个外链 + 一堆 #话题[话题]#」，
+    这些东西对读者没价值（话题上面已经有 🏷️ 标签行了），发出来只是刷屏。
+    把 URL、话题标签、空白都剔掉，剩下的实义字符太少就当垃圾丢掉。
+    """
+    if not desc:
+        return True
+    text = re.sub(r"https?://\S+", "", desc)
+    text = re.sub(r"#[^#\s]{1,30}\[话题\]#", "", text)
+    text = re.sub(r"[\s\u200b\ufe0f]+", "", text)
+    return len(text) < 4
 
 
 async def process_xiaohongshu_url(
@@ -567,8 +579,10 @@ async def process_xiaohongshu_url(
         preview_desc = note_desc
     else:
         preview_desc = truncate_str(note_desc, limit)
+    # 正文只有「来源 + 外链 + 话题」这种搬运垃圾就不发了，话题已在 🏷️ 标签行
+    desc_is_noise = is_noise_desc(note_desc)
     preview_text = "\n".join(lines)
-    if preview_desc:
+    if preview_desc and not desc_is_noise:
         preview_text = f"{preview_text}\n\n{preview_desc}"
 
     # 视频笔记用首图当封面，顺带验证视觉上不那么空
@@ -585,7 +599,7 @@ async def process_xiaohongshu_url(
     else:
         yield event.plain_result(preview_text)
 
-    if limit > 0 and len(note_desc) > limit:
+    if limit > 0 and len(note_desc) > limit and not desc_is_noise:
         uid = event.get_sender_id()
         uname = event.get_sender_name()
         node = create_forward_message(
