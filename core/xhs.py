@@ -347,7 +347,7 @@ async def process_xiaohongshu_url(
     
     # 提取URL - 匹配形如 https://www.xiaohongshu.com/explore/6841430e000000002300f126 的链接
     message_str = event.message_str.strip()
-    msg_url_match = re.search(r"(https?:\/\/)?(?:www\.)?(xhslink\.com|xiaohongshu\.com)\/[A-Za-z\d._?%&+\-=\/#@]*", message_str)
+    msg_url_match = re.search(r"(https?:\/\/)?(?:www\.)?(xhslink\.(?:com|cn)|xiaohongshu\.com)\/[A-Za-z\d._?%&+\-=\/#@]*", message_str)
     
     if not msg_url_match:
         return
@@ -365,9 +365,17 @@ async def process_xiaohongshu_url(
     # 如果是短链接，获取完整链接
     if "xhslink" in msg_url:
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(msg_url, headers=headers, follow_redirects=True)
+            # 只跟 302 拿真实地址，不整页跟到底：Cookie 失效时跟到底会被跳到 /login，
+            # 把 noteId 和 xsec_token 一起弄丢，最后报「无法提取ID」
+            async with httpx.AsyncClient(follow_redirects=False, timeout=20) as client:
+                response = await client.get(msg_url, headers=headers)
+            if response.next_request is not None:
+                msg_url = str(response.next_request.url)
+            elif response.headers.get("location"):
+                msg_url = response.headers["location"]
+            else:
                 msg_url = str(response.url)
+            logger.info(f"[R插件][小红书] 短链跳转后: {msg_url}")
         except Exception as e:
             yield event.plain_result(f"解析小红书链接失败: {str(e)}")
             return
@@ -380,7 +388,7 @@ async def process_xiaohongshu_url(
         xhs_id_match = re.search(r'source=note&noteId=(\w+)', msg_url)
     
     if not xhs_id_match:
-        yield event.plain_result(f"无法从链接中提取小红书ID")
+        yield event.plain_result("无法从链接中提取小红书ID")
         return
     
     xhs_id = xhs_id_match.group(1)
