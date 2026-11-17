@@ -788,8 +788,7 @@ async def _process_douyin_live(
     shop = _live_shop_text(room)
     if shop:
         lines.append(f"🛒 带货：{shop}")
-    if web_rid:
-        lines.append(f"🔗 直播间：{DOUYIN_LIVE_PAGE.format(web_rid)}")
+    # 刻意不回直播间链接：群里若有别的机器人，链接会被再识别一遍形成互刷循环
 
     yield await cover_text_result(
         event,
@@ -833,7 +832,7 @@ async def _process_douyin_live(
     else:
         delete_file(path)
         yield event.plain_result(
-            f"直播片段已录好但超过 {video_size_limit_mb}MB 发送上限，已跳过\n原链接：{dou_url}"
+            f"直播片段已录好但超过 {video_size_limit_mb}MB 发送上限，已跳过"
         )
 
 
