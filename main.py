@@ -284,7 +284,7 @@ class RPlugin(Star):
         self.summary_system_prompt = str(self._cfg("SUMMARY_PROMPT", "") or "")
         self.summary_user_prompt = str(self._cfg("SUMMARY_USER_PROMPT", "") or "")
 
-        return ["基础参数", "平台展示", "下载与代理", "暂存目录", "网易云音乐", "AI 总结"]
+        return ["基础参数", "平台展示", "下载与代理", "暂存目录", "网易云音乐", "腾讯元宝", "AI 总结"]
 
     # ------------------------------------------------------------ 配置读取
 
