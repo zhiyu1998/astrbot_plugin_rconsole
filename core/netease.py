@@ -82,7 +82,7 @@ from .common import (
 COOKIE_CACHE_TTL = 600.0
 
 # 音质回退链最多试几档，避免 VIP 掉权时把整条链打满
-MAX_QUALITY_ATTEMPTS = 4
+MAX_QUALITY_ATTEMPTS = 5
 
 # 网易云 CDN 一般不校验 Referer，但带上更稳
 NETEASE_REFERER = "https://music.163.com/"
@@ -102,6 +102,10 @@ _SHORT_HOST_RE = re.compile(r"(?:^|//)163cn\.tv/([A-Za-z0-9]+)", re.IGNORECASE)
 _ID_IN_QUERY_RE = re.compile(r"[?&#]id=(\d+)")
 _ID_IN_PATH_RE = re.compile(r"/(?:song|program|dj)/(\d+)")
 _PROGRAM_PATH_RE = re.compile(r"/(?:dj|program)(?:/|\?|#|$)", re.IGNORECASE)
+# 只有 song / program / dj 页面才当目标。歌单(playlist)、专辑(album)、歌手(artist)、
+# 榜单(toplist) 的 id 是**另一套号段**，拿去 /song/detail 可能正好命中某首不相干的歌，
+# 于是「发的是歌单，收到的是一首别人的曲子」且毫无提示。
+_SINGLE_PATH_RE = re.compile(r"(?:^|/|#/)(?:song|program|dj)(?:/|\?|&|$)", re.IGNORECASE)
 _AUDIO_FILE_RE = re.compile(r"\.(" + "|".join(AUDIO_EXTENSIONS) + r")$", re.IGNORECASE)
 
 
@@ -223,6 +227,8 @@ def parse_netease_target(text: str) -> Optional[SongTarget]:
             return SongTarget("short", url, url)
         if "music.163.com" not in host:
             continue
+        if not _SINGLE_PATH_RE.search(url):
+            continue
         id_match = _ID_IN_QUERY_RE.search(url) or _ID_IN_PATH_RE.search(url)
         if not id_match:
             continue
@@ -300,7 +306,29 @@ def build_quality_chain(
     for item in chain:
         if item not in deduped:
             deduped.append(item)
-    return deduped[: max(1, int(max_attempts or 1))]
+
+    limit = max(1, int(max_attempts or 1))
+    if len(deduped) > limit:
+        # QUALITY_ORDER 是从高到低，直接 [:limit] 砍的是**链尾**。
+        # 选「超清母带」时 standard 会被砍掉，于是「只有标准音源」的老歌/冷门歌
+        # 全档失败，用户看到的是「没有拿到可用音源（无版权/需会员）」这个假原因。
+        # 所以末尾始终留一档兜底。
+        deduped = deduped[: limit - 1] + [deduped[-1]]
+    return deduped
+
+
+def _as_int(value: Any, default: int = 0) -> int:
+    """
+    容错转 int。
+
+    接口里 `dt` / `duration` / `size` 偶尔是 `"123.4"` 或 `"3m20s"`；
+    直接 `int()` 抛 ValueError 会把整条 detail 丢掉（标题、歌手、封面全没了），
+    播客那边还会误报「声音不存在或已下架」。
+    """
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
 
 
 def format_size(size_bytes: int) -> str:
@@ -315,14 +343,15 @@ def format_size(size_bytes: int) -> str:
 
 
 def format_duration(duration_ms: int) -> str:
-    """毫秒转 mm:ss"""
-    try:
-        total = int(duration_ms) // 1000
-    except (TypeError, ValueError):
-        return ""
+    """毫秒转 mm:ss；超过一小时转成 h:mm:ss（播客常见）"""
+    total = _as_int(duration_ms) // 1000
     if total <= 0:
         return ""
-    return f"{total // 60:02d}:{total % 60:02d}"
+    hours, rest = divmod(total, 3600)
+    minutes, seconds = divmod(rest, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes:02d}:{seconds:02d}"
 
 
 def normalize_cover(url: str) -> str:
@@ -336,10 +365,26 @@ def normalize_cover(url: str) -> str:
 
 
 def is_trial_audio(free_trial_info: Any) -> bool:
-    """`freeTrialInfo` 非空即代表只有试听片段"""
+    """
+    `freeTrialInfo` 是否表示「只有试听片段」。
+
+    实测有两种形态：`{"start": 0, "end": 30}` 和 `[{"start": ...}]`；
+    另外 `{"start": null, "end": null}` 是**无**试听限制，不能当试听。
+    只看 key 存在会把「key 在但值为 null」的整首好歌误丢掉。
+    """
+    if isinstance(free_trial_info, (list, tuple)):
+        return any(is_trial_audio(item) for item in free_trial_info)
     if not isinstance(free_trial_info, dict):
         return False
-    return any(key in free_trial_info for key in ("start", "end", "trialStart", "trialEnd"))
+    for key in ("start", "end", "trialStart", "trialEnd"):
+        if key not in free_trial_info:
+            continue
+        try:
+            int(free_trial_info[key])
+        except (TypeError, ValueError):
+            continue
+        return True
+    return False
 
 
 def _is_trial_free(free_trial_info: Any) -> bool:
@@ -418,7 +463,11 @@ def _extract_temp_audio(payload: Any) -> Optional[AudioSource]:
         candidates.extend([data.get("music_url"), data.get("url"), data.get("link")])
 
     for candidate in candidates:
-        url = _https(str(candidate or "").strip())
+        # 这里**不做** http→https 升级：第三方源（kilz 之类）返回的直链很多只有 http，
+        # 强行升 https 会 TLS 失败，白白把兜底弄废
+        url = str(candidate or "").strip()
+        if url.startswith("//"):
+            url = "https:" + url
         if not url.startswith("http"):
             continue
         if not re.search(r"\.(mp3|flac|m4a|wav|ape|ogg|aac|mp4)(\?|$)", url, re.IGNORECASE):
@@ -444,9 +493,18 @@ def _extract_temp_audio(payload: Any) -> Optional[AudioSource]:
 
 
 def _assert_api_ok(payload: Any, endpoint: str) -> Any:
-    """接口层错误归一：`code != 200` 一律抛 NeteaseError"""
+    """
+    接口层错误归一：`code != 200` 一律抛 NeteaseError。
+
+    非 dict 响应（反代返回 `[]`、撞到别的服务、兼容实现换了结构）也在这里抛，
+    否则调用方的 `payload.get(...)` 会变成 AttributeError 冒到 handler，
+    用户端一个回复都收不到。
+    """
     if not isinstance(payload, dict):
-        return payload
+        raise NeteaseError(
+            f"网易云接口 {endpoint} 返回的不是 JSON 对象（{type(payload).__name__}）",
+            endpoint=endpoint,
+        )
     code = payload.get("code")
     if code is None:
         return payload
@@ -627,7 +685,15 @@ async def cookie_status(
             logger.warning(f"[R插件][网易云] Cookie 检测失败：{exc}")
             if cached:
                 return cached[1]
-            return {"alive": False, "user_id": "", "nickname": "", "reason": str(exc)}
+            # 探测失败**不等于**失效。这里给 alive=True 让回退链从首选档开始：
+            # 接口自己会静默降级，最多多花一次往返；反过来（当失效处理）
+            # 会让网络抖一下就把音质永久压在「极高」，用户以为是插件不识别无损。
+            return {
+                "alive": True,
+                "user_id": "",
+                "nickname": "",
+                "reason": f"探测失败（按有效处理）：{exc}",
+            }
         _COOKIE_CACHE[key] = (time.monotonic(), status)
         return status
 
@@ -668,7 +734,7 @@ async def fetch_song_detail(
             "name": str(item.get("name") or ""),
             "artists": artists,
             "cover": normalize_cover(album.get("picUrl") or ""),
-            "duration_ms": int(item.get("dt") or item.get("duration") or 0),
+            "duration_ms": _as_int(item.get("dt") or item.get("duration")),
         }
     return detail
 
@@ -746,12 +812,15 @@ async def resolve_audio(
             continue
 
         actual_level = str(audio.get("level") or level)
-        try:
-            size_bytes = int(audio.get("size") or 0)
-        except (TypeError, ValueError):
-            size_bytes = 0
+        size_bytes = _as_int(audio.get("size"))
 
-        ext = str(audio.get("type") or "mp3").lower()
+        # `type` 并不总是容器格式：母带/Dolby 会出现 "mp4"、某些实现给 "flac" 但实际是 mp3。
+        # 依次看 URL 后缀 → type → encodeType，最后才退回 mp3（后缀错了会让语音播不出来）。
+        url_ext = _AUDIO_FILE_RE.search(url.split("?")[0])
+        if url_ext:
+            ext = url_ext.group(1).lower()
+        else:
+            ext = str(audio.get("type") or audio.get("encodeType") or "").lower()
         if ext not in AUDIO_EXTENSIONS:
             ext = "mp3"
 
@@ -846,7 +915,7 @@ async def fetch_program_song(
         "name": str(main_song.get("name") or program.get("name") or ""),
         "artists": artists,
         "cover": normalize_cover(str(album.get("picUrl") or program.get("coverUrl") or "")),
-        "duration_ms": int(main_song.get("duration") or program.get("duration") or 0),
+        "duration_ms": _as_int(main_song.get("duration") or program.get("duration")),
         "program_name": str(program.get("name") or ""),
     }
 
@@ -917,8 +986,16 @@ async def _deliver_via_component(
                 if converted:
                     voice_path = converted
             if voice_path.lower().endswith(".mp3"):
-                release_file(voice_path, 180.0)
-                return event.chain_result([Comp.Record(file=voice_path)])
+                # 转码后体积可能反而变大（flac→320k mp3），复查一次再决定发不发语音
+                try:
+                    voice_size = os.path.getsize(voice_path)
+                except OSError:
+                    voice_size = 0
+                if voice_size and voice_size <= VOICE_MAX_MB_NON_ONEBOT * 1024 * 1024:
+                    release_file(voice_path, 180.0)
+                    return event.chain_result([Comp.Record(file=voice_path)])
+                if voice_path != path:
+                    release_file(voice_path, 10.0)
         logger.info(
             "[R插件][网易云] 当前平台不支持音乐卡片或语音发不了（音频"
             f"{size / 1024 / 1024:.1f}MB），改发文件"
@@ -1063,6 +1140,12 @@ async def _push_file(event: AstrMessageEvent, path: str, display_name: str) -> T
             f"音频 {size_bytes / 1024 / 1024:.1f}MB 超过文件消息上限 {FILE_BASE64_MAX_MB}MB"
         )
 
+    if size_bytes > 12 * 1024 * 1024:
+        # base64 会膨胀约 1/3，20MB 音频 → 27MB 的单条 ws 消息，协议端可能直接断连
+        logger.warning(
+            f"[R插件][网易云] 文件 {size_bytes / 1024 / 1024:.1f}MB 走 base64 上传，"
+            "体积偏大；失败时建议改用「语音」或调低音质"
+        )
     try:
         with open(path, "rb") as fp:
             payload = "base64://" + base64.b64encode(fp.read()).decode()
@@ -1100,6 +1183,24 @@ async def _push_file(event: AstrMessageEvent, path: str, display_name: str) -> T
         return False, str(exc)
 
 
+async def _probe_size(url: str, timeout: float = 10.0) -> int:
+    """
+    HEAD 拿 Content-Length。
+
+    第三方临时源经常不带 `size`，于是「体积上限」对它们形同不存在（白下几十 MB）。
+    拿不到体积时返回 0，调用方按「未知不拦」处理 —— 宁可放行，也别把能播的歌挡掉。
+    """
+    try:
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            resp = await client.head(
+                url,
+                headers={"Referer": NETEASE_REFERER, "User-Agent": COMMON_USER_AGENT},
+            )
+            return _as_int(resp.headers.get("content-length"))
+    except Exception:  # noqa: BLE001
+        return 0
+
+
 def _file_result(event: AstrMessageEvent, path: str, error: str = "") -> Any:
     """文件没发出去时的收尾：给一句可操作的提示，别让用户以为插件坏了。"""
     release_file(path, 10.0)
@@ -1126,6 +1227,12 @@ async def process_netease_url(
     text = get_message_text(event)
     target = parse_netease_target(text)
     if not target:
+        # 是网易云链接但没解析出单曲（歌单 / 专辑 / 歌手页）：给一句提示，
+        # 否则用户发歌单会「什么都没发生」
+        if re.search(r"music\.163\.com|163cn\.tv", text or "", re.IGNORECASE):
+            yield event.plain_result(
+                "暂只支持网易云的单曲与声音（播客）链接，歌单 / 专辑 / 歌手页还没做"
+            )
         return
     logger.info(f"[R插件][网易云] 收到目标：{target.kind} {target.target_id}")
 
@@ -1159,7 +1266,7 @@ async def process_netease_url(
             id=str(info["id"]),
             name=str(info.get("name") or info.get("program_name") or ""),
             artist="/".join(info.get("artists") or []),
-            duration_ms=int(info.get("duration_ms") or 0),
+            duration_ms=_as_int(info.get("duration_ms")),
             cover=str(info.get("cover") or ""),
             kind="podcast",
             program_id=target.target_id,
@@ -1179,7 +1286,7 @@ async def process_netease_url(
             song.name = song.name or info.get("name") or ""
             song.artist = song.artist or "/".join(info.get("artists") or [])
             song.cover = song.cover or info.get("cover") or ""
-            song.duration_ms = song.duration_ms or int(info.get("duration_ms") or 0)
+            song.duration_ms = song.duration_ms or _as_int(info.get("duration_ms"))
     song.cover = normalize_cover(song.cover)
 
     status = await cookie_status(client, cookie)
@@ -1192,40 +1299,55 @@ async def process_netease_url(
         allow_fallback=quality_fallback,
         cookie_alive=bool(status.get("alive")),
     )
-    if source is None and temp_fallback:
-        source = await temp_api_resolve(song.artist, song.name)
+    # 主链没有音源、或者拿到的体积太大，都值得再试第三方：
+    # 临时接口通常只给 320k mp3，比母带小一两个数量级
+    if (source is None or source.oversize) and temp_fallback:
+        temp_source = await temp_api_resolve(song.artist, song.name)
+        if temp_source is not None and temp_source.url:
+            if source is not None:
+                temp_source.warnings.append("主链音源超过体积上限，改用第三方直链")
+            source = temp_source
 
     tags: List[str] = []
     if song.kind != "podcast":
         tags = await fetch_wiki_tags(client, song.id)
 
     info_text = build_info_text(song, source, tags, identify_prefix)
-    if source is not None and source.oversize:
-        yield await cover_text_result(
-            event, song.cover, info_text, referer=NETEASE_REFERER, prefix="nc_cover"
-        )
-        yield event.plain_result(
-            f"音源 {format_size(source.size_bytes)} 超过上限 {audio_max_mb}MB，未下载。\n"
-            f"可以调低「网易云解析最高音质」，或调高「网易云音频体积上限」。"
-        )
-        return
+    yield await cover_text_result(
+        event, song.cover, info_text, referer=NETEASE_REFERER, prefix="nc_cover"
+    )
+
+    for warning in (source.warnings if source else []):
+        logger.info(f"[R插件][网易云] {warning}")
+
+    # 卡片不需要本地文件：歌曲 id 与音频直链就够。放在下载之前，
+    # 否则每发一次卡片都要白下整首（母带 200MB）。
+    api = _onebot_api(event)
+    if send_mode == "card" and api is not None:
+        pushed, card_error = await _push_card(event, song, source)
+        if pushed:
+            return
+        logger.warning(f"[R插件][网易云] 卡片发送失败（{card_error}），改用文件/语音")
+        send_mode = "voice" if (source is not None and source.url) else "file"
 
     if source is None or not source.url:
-        yield await cover_text_result(
-            event, song.cover, info_text, referer=NETEASE_REFERER, prefix="nc_cover"
-        )
         yield event.plain_result(
             "没有拿到可用音源。常见原因：这首歌无版权 / 需要会员、"
             "自建 API 没有登录、Cookie 失效。"
         )
         return
 
-    for warning in source.warnings:
-        logger.info(f"[R插件][网易云] {warning}")
-
-    yield await cover_text_result(
-        event, song.cover, info_text, referer=NETEASE_REFERER, prefix="nc_cover"
-    )
+    # 体积上限对所有来源统一判定（第三方临时源原先不带 oversize 标记，等于没上限）
+    max_bytes = max(0, _as_int(audio_max_mb)) * 1024 * 1024
+    size_bytes = _as_int(source.size_bytes)
+    if max_bytes and size_bytes <= 0:
+        size_bytes = await _probe_size(source.url)
+    if max_bytes and size_bytes > max_bytes:
+        yield event.plain_result(
+            f"音源 {format_size(size_bytes)} 超过上限 {audio_max_mb}MB，未下载。\n"
+            f"可以调低「网易云解析最高音质」，或调高「网易云音频体积上限」。"
+        )
+        return
 
     ext = source.ext or "mp3"
     path = await download_file(
