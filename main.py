@@ -45,7 +45,7 @@ from .core.xhs import process_xiaohongshu_url
 from .core.xiaoheihe import process_xiaoheihe_url
 
 PLUGIN_NAME = "astrbot_plugin_rconsole"
-VERSION = "1.2.10"
+VERSION = "1.2.11"
 PLATFORM_ALIASES = {
     "douyin": "抖音",
     "bilibili": "哔哩哔哩",
@@ -73,13 +73,38 @@ _CODEC_ALIAS = {
     "avc": "avc",
 }
 
+# ---------------------------------------------------------------- 平台路由正则
+# AstrBot 的 filter.regex 内部是 re.match()（本来就锚在字符串开头），
+# 老写法 ".*(bilibili\.com|...).*" 等于「消息里只要提到链接就解析」，
+# 于是「看看这个视频 https://www.bilibili.com/video/BVxxx」也被当成分享。
+# 现在只认三种情况：
+#   1) 直接以链接开头：https://www.bilibili.com/... 、www.bilibili.com/...
+#      （含 live./space./t./m. 等子域），以及 b23.tv / bili2233.cn 短链；
+#   2) 直接以 BV 号开头：BV1GJ411x7h7；
+#   3) 小程序 / 分享卡片补丁注入的文本（"[小程序/卡片] ... 链接: xxx"），
+#      卡片里链接在中间，只能靠卡片标记兜底（"[卡片]" 是解析失败时的原始兜底），
+#      不然小程序全废。
+# 开头允许若干个 QQ 群 @提及（"@张三(123456) 链接"），其它前缀一律不解析。
+BILI_ROUTE_HOST = r"(?:[A-Za-z0-9-]+\.)*(?:bilibili\.com|b23\.tv|bili2233\.cn)"
+BILI_ROUTE_BV = r"[Bb][Vv][1-9A-Za-z]{10}"
+# 卡片补丁注入的文本：正常卡片是 "[小程序/卡片] ..."，解析不出来的兜底是 "[卡片] ..."
+BILI_ROUTE_CARD = r"\[(?:小程序/)?卡片\]"
+# 群里「@某人 + 链接」很常见，aiocqhttp 会把非机器人的 @ 塞进 message_str
+# （形如 " @张三(123456) 链接"），这种不算「先聊天后甩链接」，放行；
+# 其它任何前置闲聊都不放行。
+BILI_ROUTE_AT = r"(?:@[^\s@]+\s+)*"
+BILIBILI_ROUTE_REGEX = (
+    r"^" + BILI_ROUTE_AT + r"(?:(?:https?://)?" + BILI_ROUTE_HOST + r"|" + BILI_ROUTE_BV + r")"
+    r"|.*" + BILI_ROUTE_CARD + r".*(?:" + BILI_ROUTE_HOST + r"|" + BILI_ROUTE_BV + r")"
+)
+
 
 @register(
     PLUGIN_NAME,
     "RrOrange",
     "R插件迁移版：抖音/B站/快手/微博/AcFun/小红书/米游社/小黑盒/微视/YouTube/微信视频号 "
     "链接解析 + AI 总结（已适配 Telegram 发送）",
-    "1.2.10",
+    "1.2.11",
 )
 class RPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -365,7 +390,7 @@ class RPlugin(Star):
 
     # ------------------------------------------------------------ 哔哩哔哩
 
-    @filter.regex(r".*(bilibili\.com|b23\.tv|bili2233\.cn|BV[1-9a-zA-Z]{10}).*")
+    @filter.regex(BILIBILI_ROUTE_REGEX)
     async def bilibili(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
         if not self._enabled("bilibili"):
             return

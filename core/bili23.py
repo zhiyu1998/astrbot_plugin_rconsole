@@ -504,6 +504,37 @@ async def _process_bili_live(
         )
 
 
+# ---------------------------------------------------------------- 目标提取
+
+_BILI_SHORT_URL_RE = re.compile(
+    r"(?:https?://)?(?:[A-Za-z0-9-]+\.)*(?:b23\.tv|bili2233\.cn)/[A-Za-z0-9._?%&+\-=/@~#]*"
+)
+_BILI_LONG_URL_RE = re.compile(
+    r"(?:https?://)?(?:[A-Za-z0-9-]+\.)*bilibili\.com(?:/[A-Za-z0-9._?%&+\-=/@~#]*)?"
+)
+_BV_ID_RE = re.compile(r"BV[1-9a-zA-Z]{10}", re.IGNORECASE)
+
+
+def _pick_bili_target(text: str) -> str:
+    """
+    从整条消息里抠出真正要解析的目标。
+
+    消息可能长这样：
+      * "https://www.bilibili.com/video/BV1GJ411x7h7"           纯链接
+      * "https://www.bilibili.com/video/BV1GJ411x7h7 这歌绝了"   链接 + 闲聊
+      * "BV1GJ411x7h7"                                          纯 BV 号
+      * "[小程序/卡片] 哔哩哔哩 ... 链接: https://b23.tv/xxxx"    卡片注入文本
+
+    优先级：短链 > 完整链接 > BV 号；都抠不到就原样返回（交给后面的老逻辑）。
+    """
+    text = (text or "").replace("\\/", "/").strip()  # CQ/JSON 里可能是 b23.tv\/xxx
+    for pattern in (_BILI_SHORT_URL_RE, _BILI_LONG_URL_RE, _BV_ID_RE):
+        match = pattern.search(text)
+        if match:
+            return match.group(0)
+    return text
+
+
 async def process_bilibili_url(
     event: AstrMessageEvent,
     credential: Credential,
@@ -528,13 +559,17 @@ async def process_bilibili_url(
         核心代码：处理B站链接
     """
     # 1. URL 预处理
-    # 当前收到的消息
-    url: str = event.message_str.strip()
+    # 当前收到的消息（可能是「链接 + 闲聊」或「[小程序/卡片] ... 链接: xxx」），
+    # 先抠出真正的目标，别把整段话当 URL 用
+    url: str = _pick_bili_target(event.message_str)
     url_reg = r"(http:|https:)\/\/(space|www|live|t).bilibili.com\/[A-Za-z\d._?%&+\-=\/#]*"
     b_short_rex = r"(https?://(?:b23\.tv|bili2233\.cn)/[A-Za-z\d._?%&+\-=\/#]+)"
     # BV处理
-    if re.match(r'^BV[1-9a-zA-Z]{10}$', url, re.IGNORECASE):
+    if _BV_ID_RE.fullmatch(url):
         url = 'https://www.bilibili.com/video/' + url
+    # 短链没带协议头时补一个，否则 httpx 直接抛 UnsupportedProtocol
+    if ("b23.tv" in url or "bili2233.cn" in url) and not url.lower().startswith(("http://", "https://")):
+        url = "https://" + url.lstrip("/")
     # 处理短号、小程序问题
     if "b23.tv" in url or "bili2233.cn" in url:
         try:
