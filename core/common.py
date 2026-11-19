@@ -779,6 +779,39 @@ async def convert_flv_to_mp4(flv_path: str) -> Optional[str]:
     return output if ok and os.path.exists(output) else None
 
 
+async def convert_audio_to_mp3(
+    src_path: str,
+    *,
+    bitrate: str = "320k",
+    timeout: int = 300,
+) -> Optional[str]:
+    """
+    把音频转成 mp3。
+
+    语音消息（Record）最终会被适配器转成 base64 交给协议端，而 flac/ape 这类容器
+    对端不一定认；网易云无损（flac）想发语音就必须先转 mp3。
+
+    转码失败返回 None，由调用方决定改发文件还是放弃。
+    """
+    if not src_path or not os.path.exists(src_path):
+        return None
+    if src_path.lower().endswith(".mp3"):
+        return src_path
+
+    output = os.path.splitext(src_path)[0] + ".mp3"
+    ok = await asyncio.to_thread(
+        _run_ffmpeg,
+        ["-y", "-i", src_path, "-vn", "-c:a", "libmp3lame", "-b:a", bitrate, output],
+        timeout,
+    )
+    if ok and os.path.exists(output) and os.path.getsize(output) > 0:
+        # 转码成功后原文件就没用了，及时删掉，避免 temp 目录堆无损文件
+        delete_file(src_path)
+        return output
+    delete_file(output)
+    return None
+
+
 # ---------------------------------------------------------------- 消息组装
 
 

@@ -3,11 +3,10 @@ R插件（AstrBot 迁移版）入口
 
 迁移自 Yunzai 版 rconsole-plugin 的 apps/tools.js，只保留解析类功能：
 抖音、哔哩哔哩、快手、微博、AcFun、小红书、米游社、小黑盒、微视、YouTube、
-微信视频号、AI 总结。
+微信视频号、AI 总结，以及网易云音乐（单曲 / 播客链接解析）。
 
-点歌（网易云 / 酷狗 / QQ音乐）、X、Instagram、Telegram 频道消息、贴吧、最右这些
-解析分支没有迁移；Telegram 作为**消息平台**已适配（文字先行发送、上传超时放宽、
-组件级重试，见 core/tgfix.py）。
+X、Instagram、Telegram 频道消息、贴吧、最右这些解析分支没有迁移；Telegram 作为**消息平台**
+已适配（文字先行发送、上传超时放宽、组件级重试，见 core/tgfix.py）。
 """
 
 import asyncio
@@ -38,6 +37,7 @@ from .core.webview import register_view_apis
 from .core.wxchannel import process_wxchannel_url
 from .core.youtube import check_proxy, process_youtube_url, set_cookie_file
 from .core.miyoushe import process_miyoushe_url
+from .core.netease import process_netease_url, quality_from_setting, send_mode_from_setting
 from .core.summary import detect_summary_target, process_summary_url
 from .core.weibo import process_weibo_url
 from .core.weishi import process_weishi_url
@@ -45,7 +45,7 @@ from .core.xhs import process_xiaohongshu_url
 from .core.xiaoheihe import process_xiaoheihe_url
 
 PLUGIN_NAME = "astrbot_plugin_rconsole"
-VERSION = "1.2.11"
+VERSION = "1.2.12"
 PLATFORM_ALIASES = {
     "douyin": "抖音",
     "bilibili": "哔哩哔哩",
@@ -58,6 +58,7 @@ PLATFORM_ALIASES = {
     "weishi": "微视",
     "youtube": "YouTube",
     "wxchannel": "微信视频号",
+    "netease": "网易云",
     "summary": "AI总结",
 }
 
@@ -104,7 +105,7 @@ BILIBILI_ROUTE_REGEX = (
     "RrOrange",
     "R插件迁移版：抖音/B站/快手/微博/AcFun/小红书/米游社/小黑盒/微视/YouTube/微信视频号 "
     "链接解析 + AI 总结（已适配 Telegram 发送）",
-    "1.2.11",
+    "1.2.12",
 )
 class RPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -240,6 +241,19 @@ class RPlugin(Star):
         self.wxchannel_display_cover = bool(self._cfg("WXCHANNEL_DISPLAY_COVER", True))
         self.wxchannel_display_stats = bool(self._cfg("WXCHANNEL_DISPLAY_STATS", True))
         self.wxchannel_desc_len_limit = int(self._cfg("WXCHANNEL_DESC_LEN_LIMIT", 200) or 0)
+
+        # 网易云（自建 NeteaseCloudMusicApi）：只做链接 / 卡片解析
+        self.netease_api_server = str(self._cfg("NETEASE_API_SERVER", "") or "").strip()
+        self.netease_cookie = str(self._cfg("NETEASE_COOKIE", "") or "").strip()
+        self.netease_quality = quality_from_setting(str(self._cfg("NETEASE_QUALITY", "极高") or "极高"))
+        self.netease_quality_fallback = bool(self._cfg("NETEASE_QUALITY_FALLBACK", True))
+        self.netease_audio_max_mb = int(self._cfg("NETEASE_AUDIO_MAX_MB", 30) or 0)
+        # 0 / 负数 → 回到默认 30MB：宁可不发，也别把上百 MB 的母带塞进消息通道
+        if self.netease_audio_max_mb <= 0:
+            self.netease_audio_max_mb = 30
+        self.netease_send_mode = send_mode_from_setting(self._cfg("NETEASE_SEND_VOICE", "文件"))
+        self.netease_temp_fallback = bool(self._cfg("NETEASE_TEMP_FALLBACK", True))
+
         self.youtube_cookies = set_cookie_file(str(self._cfg("YOUTUBE_COOKIES", "") or ""))
         if self.youtube_cookies:
             logger.info(f"[R插件] YouTube Cookie：{self.youtube_cookies}")
@@ -257,7 +271,7 @@ class RPlugin(Star):
         self.summary_system_prompt = str(self._cfg("SUMMARY_PROMPT", "") or "")
         self.summary_user_prompt = str(self._cfg("SUMMARY_USER_PROMPT", "") or "")
 
-        return ["基础参数", "平台展示", "下载与代理", "暂存目录", "AI 总结"]
+        return ["基础参数", "平台展示", "下载与代理", "暂存目录", "网易云音乐", "AI 总结"]
 
     # ------------------------------------------------------------ 配置读取
 
@@ -526,6 +540,32 @@ class RPlugin(Star):
             event,
             identify_prefix=self.identify_prefix,
             video_size_limit_mb=self.video_size_limit_mb,
+        ):
+            yield result
+
+    # ------------------------------------------------------------ 网易云音乐
+
+    @filter.regex(r".*(music\.163\.com|163cn\.tv).*")
+    async def netease_music(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
+        if not self._enabled("netease"):
+            return
+        # 自己发的消息不再解析：识别结果里即使出现其它平台的网易云链接，
+        # 也不会形成「机器人 A 发 → 机器人 B 识别 → 再发」的循环
+        try:
+            if str(event.get_self_id()) == str(event.get_sender_id()):
+                return
+        except Exception:  # noqa: BLE001
+            pass
+        async for result in process_netease_url(
+            event,
+            api_server=self.netease_api_server,
+            cookie=self.netease_cookie,
+            quality=self.netease_quality,
+            audio_max_mb=self.netease_audio_max_mb,
+            send_mode=self.netease_send_mode,
+            temp_fallback=self.netease_temp_fallback,
+            quality_fallback=self.netease_quality_fallback,
+            identify_prefix=self.identify_prefix,
         ):
             yield result
 

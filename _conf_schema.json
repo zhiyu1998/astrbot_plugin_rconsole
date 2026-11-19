@@ -330,8 +330,18 @@
     "description": "【抖音】画质档位",
     "type": "string",
     "default": "1080P",
-    "options": ["1080P", "720P", "540P", "AUTO"],
-    "labels": ["1080P 高清（最高）", "720P 标清（省流）", "540P 流畅（最省流）", "AUTO 跟随直链默认档"],
+    "options": [
+      "1080P",
+      "720P",
+      "540P",
+      "AUTO"
+    ],
+    "labels": [
+      "1080P 高清（最高）",
+      "720P 标清（省流）",
+      "540P 流畅（最省流）",
+      "AUTO 跟随直链默认档"
+    ],
     "hint": "抖音直链服务端的 ratio 只认真实存在的三档：1080P / 720P / 540P（实测 1080P 给出 1080x1920，720P 给出 720x1280，540P 给出 576x1024；源本身没有 1080P 时会自动给到实际最高档）。AUTO = 不指定 ratio，走直链默认档（通常是 720P，与水印直链一致）。"
   },
   "DOUYIN_LIVE_DURATION": {
@@ -384,6 +394,68 @@
     "type": "int",
     "default": 50,
     "hint": "帖子最多转发多少条评论，太多会影响发送速度"
+  },
+  "NETEASE_API_SERVER": {
+    "description": "【网易云音乐】自建 API 地址",
+    "type": "string",
+    "default": "",
+    "hint": "自建 NeteaseCloudMusicApi 的地址，例：http://127.0.0.1:3000 或 http://你的IP:3000。留空则网易云解析直接提示未配置",
+    "obvious_hint": true
+  },
+  "NETEASE_COOKIE": {
+    "description": "【网易云音乐】网易云 Cookie",
+    "type": "string",
+    "default": "",
+    "hint": "填 MUSIC_U=xxx（浏览器登录 music.163.com 后从 F12 → Application → Cookie 复制）。VIP 账号才能解析无损 / Hi-Res / 超清母带；留空只能解析到极高",
+    "obvious_hint": true
+  },
+  "NETEASE_QUALITY": {
+    "description": "【网易云音乐】解析最高音质",
+    "type": "string",
+    "default": "极高",
+    "options": [
+      "极高",
+      "无损",
+      "Hi-Res",
+      "超清母带",
+      "较高",
+      "标准",
+      "杜比全景声",
+      "沉浸环绕声",
+      "高清环绕声"
+    ],
+    "hint": "按账号权限从高往低尝试。超清母带单曲可达 200MB 以上，配合下面的体积上限使用；杜比是全景声 MP4，需要设备支持",
+    "obvious_hint": true
+  },
+  "NETEASE_QUALITY_FALLBACK": {
+    "description": "【网易云音乐】音质自动降级",
+    "type": "bool",
+    "default": true,
+    "hint": "首选音质拿不到时逐级下降（母带 → Hi-Res → 无损 → 极高 …）。关闭后只请求首选档位，拿不到就报错"
+  },
+  "NETEASE_AUDIO_MAX_MB": {
+    "description": "【网易云音乐】音频体积上限（MB）",
+    "type": "int",
+    "default": 30,
+    "hint": "超过上限继续降档；全部超限则不下载，只发歌曲信息（填 0 按 30 处理）",
+    "obvious_hint": true
+  },
+  "NETEASE_SEND_VOICE": {
+    "description": "【网易云音乐】发送方式：卡片 / 语音 / 文件",
+    "default": "文件",
+    "hint": "卡片：QQ 音乐卡片，点开就能看/听（官方歌曲用网易云原生卡，云盘与播客用自定义卡）；语音：先把无损转 320k mp3 再发语音；文件：以群文件形式上传（可保存，走 base64，单条上限 20MB）",
+    "options": [
+      "卡片",
+      "语音",
+      "文件"
+    ],
+    "type": "string"
+  },
+  "NETEASE_TEMP_FALLBACK": {
+    "description": "【网易云音乐】第三方临时音源兜底",
+    "type": "bool",
+    "default": true,
+    "hint": "自建 API 拿不到音源（无版权 / 需要会员）时，再试第三方解析接口。接口随时可能失效，失败会自动忽略"
   },
   "SUMMARY_ENABLED": {
     "description": "【AI 总结】启用 AI 总结",
