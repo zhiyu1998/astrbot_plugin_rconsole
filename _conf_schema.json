@@ -501,19 +501,22 @@
     "default": "这是网页链接: {url}\n\n网页正文如下：\n{content}\n\n请根据以上内容进行总结。"
   },
   "YUANBAO_ENABLED": {
-    "description": "【腾讯元宝】启用元宝模型对话",
+    "description": "【腾讯元宝】AI 总结改用元宝模型",
     "type": "bool",
     "default": false,
-    "hint": "开启后可用「#元宝 <问题>」直接问元宝自带模型。依赖服务器上的 chromium（首次调用要起浏览器，慢几秒）"
+    "hint": "开启后「总结一下 <链接>」交给元宝的模型处理，不再占用 AstrBot 的对话模型配额。依赖服务器上的 chromium（首次调用要起浏览器，慢几秒）"
   },
   "YUANBAO_MODEL": {
     "description": "【腾讯元宝】使用的模型",
     "type": "string",
-    "default": "混元",
+    "default": "Hy3",
     "options": [
-      "混元",
-      "DeepSeek-V3"
-    ]
+      "Hy3",
+      "Hy3 深度思考",
+      "DeepSeek",
+      "DeepSeek 深度思考"
+    ],
+    "hint": "Hy3 是元宝默认模型；带「深度思考」的走子模型（hunyuan_t1 / deep_seek），更慢但推理更细。网页上还有个 Hy4 New，接口对当前账号不返回，暂不可选"
   },
   "YUANBAO_COOKIE": {
     "description": "【腾讯元宝】元宝 Web 端 Cookie（留空复用视频号 Cookie）",

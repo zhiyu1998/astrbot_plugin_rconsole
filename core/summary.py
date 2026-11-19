@@ -3,7 +3,8 @@ AI 总结（迁移自 R 插件 apps/tools.js 的 linkShareSummary）
 
 原版做法：
     1. 用正则判断链接属于哪个平台（微信文章 / ArXiv / 少数派 / B站专栏 / 知乎问题 /
-       ChinaDaily / GitHub / V2EX），或者用户直接发 `#总结一下 <链接>`
+       ChinaDaily / GitHub / V2EX），或者用户直接发 `总结一下 <链接>`
+       （开头的 `#` / `/` 有没有都行，AstrBot 会先吃掉唤醒前缀）
     2. `llmRead()` 把网页抓下来 → 去掉脚本样式 → 压成纯文本（最多 5 万字符）
     3. 把正文塞进 prompt，交给大模型按 SUMMARY_PROMPT 输出「标题 + 摘要 + 关键段落」
     4. 先回一条「《标题》 预计阅读时间 x 分钟，总字数 y」，再用合并转发发总结
@@ -41,6 +42,13 @@ SUMMARY_PATTERNS: List[Tuple[str, re.Pattern]] = [
 ]
 
 SUMMARY_COMMAND = "#总结一下"
+
+# 唤醒前缀（#、/ 等）会被 AstrBot 先行剥掉，所以这里不能依赖开头的 #
+# 消息可能长成：总结一下 / #总结一下 / ##总结一下 / /#总结一下
+SUMMARY_TRIGGER_RE = re.compile(r"^[#＃/／]{0,4}\s*总结一下")
+SUMMARY_URL_RE = re.compile(
+    r"(?:https?://|www\.)[^\s，。；：！？、（）【】》»“”‘’'\"`]+", re.I
+)
 
 SUMMARY_PROMPT = """# Role: Web Content Summarization Assistant
 
@@ -80,6 +88,9 @@ DEFAULT_USER_PROMPT_TEMPLATE = (
 )
 
 DEFAULT_MAX_CHARS = 30000
+
+# 走元宝时正文要短得多：元宝的上下文装不下 3 万字符，超了会被截断或直接报错
+YUANBAO_MAX_CHARS = 12000
 COMMON_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -91,25 +102,37 @@ def detect_summary_target(text: str) -> Optional[Tuple[str, str]]:
     从消息里认出「要总结什么」。
 
     返回 (平台名, 链接)；认不出来返回 None。
-    `#总结一下 <链接>` 的优先级最高，不要求命中平台正则。
+    「总结一下 <链接>」的优先级最高，不要求命中平台正则；
+    命令前缀 `#` / `/` 可有可无（AstrBot 会把唤醒前缀吃掉）。
     """
     text = (text or "").strip()
     if not text:
         return None
 
-    if text.startswith(SUMMARY_COMMAND):
-        rest = text[len(SUMMARY_COMMAND):].strip()
-        match = re.search(r"https?://[^\s，。；：！？、（）【】》»\"“”'`]+", rest)
-        if not match:
-            return None
-        url = match.group(0)
+    def _platform_of(link: str) -> str:
         # 命令只是「强制总结」，平台名还是按链接认一下，别一律叫「网页」
         for name, pattern in SUMMARY_PATTERNS:
             if name == "网页":
                 continue
-            if pattern.search(url):
-                return name, url
-        return "网页", url
+            if pattern.search(link):
+                return name
+        return "网页"
+
+    def _normalize(link: str) -> str:
+        link = link.strip()
+        if not link.lower().startswith("http"):
+            link = "https://" + link.lstrip("/")
+        return link
+
+    # 1) 命令式：允许任意位置的「总结一下」，也不管前面有没有 # 或 /
+    if "总结一下" in text:
+        trigger = SUMMARY_TRIGGER_RE.search(text)
+        start = trigger.end() if trigger else text.index("总结一下") + len("总结一下")
+        match = SUMMARY_URL_RE.search(text[start:]) or SUMMARY_URL_RE.search(text)
+        if not match:
+            return None
+        url = _normalize(match.group(0))
+        return _platform_of(url), url
 
     for name, pattern in SUMMARY_PATTERNS:
         match = pattern.search(text)
@@ -325,6 +348,9 @@ async def process_summary_url(
     text: str = "",
     system_prompt: str = "",
     user_prompt: str = "",
+    use_yuanbao: bool = False,
+    yuanbao_cookie: str = "",
+    yuanbao_model: str = "Hy3",
 ) -> AsyncGenerator[Any, None]:
     """
     识别并总结一条链接消息。识别不出来直接 return（不影响其它解析器）。
@@ -339,8 +365,14 @@ async def process_summary_url(
     if identify_prefix is None:
         identify_prefix = ""
 
-    pid, model = await resolve_provider(context, event, provider_id)
-    if not pid and not model:
+    use_yuanbao = bool(use_yuanbao and (yuanbao_cookie or "").strip())
+
+    pid, model = "", ""
+    if use_yuanbao:
+        model = f"元宝（{yuanbao_model}）"
+    else:
+        pid, model = await resolve_provider(context, event, provider_id)
+    if not use_yuanbao and not pid and not model:
         yield event.plain_result(
             f"{identify_prefix}{name}（AI 总结）失败：没有可用的大模型。\n"
             "请在 AstrBot 面板「服务提供商」里配置一个对话模型，或在插件设置里指定 provider。"
@@ -358,21 +390,50 @@ async def process_summary_url(
         yield event.plain_result(f"{identify_prefix}{name}（AI 总结）失败：{exc}\n{url}")
         return
 
+    if use_yuanbao and len(content) > YUANBAO_MAX_CHARS:
+        content = content[:YUANBAO_MAX_CHARS] + "\n\n（正文过长，已截断）"
+
     prompt = build_user_prompt(url, content, user_prompt)
     system = (system_prompt or "").strip() or DEFAULT_SUMMARY_PROMPT
-    try:
-        logger.info(f"[R插件][AI总结] 使用模型 {model or pid} 总结 {url}（正文 {len(content)} 字符）")
-        resp = await context.llm_generate(
-            chat_provider_id=pid,
-            prompt=prompt,
-            system_prompt=system,
-        )
-    except Exception as exc:  # noqa: BLE001
-        logger.error(f"[R插件][AI总结] 模型调用失败：{exc}")
-        yield event.plain_result(f"{identify_prefix}{name}（AI 总结）失败：模型调用出错（{exc}）")
-        return
+    summary = ""
+    if use_yuanbao:
+        from . import yuanbao as yuanbao_mod
 
-    summary = (getattr(resp, "completion_text", "") or "").strip()
+        # 元宝只有一个 prompt 字段，system 与 user 合并进去
+        merged = f"{system}\n\n{prompt}"
+        try:
+            logger.info(
+                f"[R插件][AI总结] 使用元宝 {yuanbao_model} 总结 {url}"
+                f"（正文 {len(content)} 字符）"
+            )
+            summary = await yuanbao_mod.ask(
+                merged,
+                cookie=yuanbao_cookie,
+                model=yuanbao_model,
+                timeout=max(60.0, float(timeout)),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"[R插件][AI总结][元宝] 调用失败：{exc}")
+            yield event.plain_result(
+                f"{identify_prefix}{name}（AI 总结）失败：元宝调用出错（{exc}）"
+            )
+            return
+    else:
+        try:
+            logger.info(
+                f"[R插件][AI总结] 使用模型 {model or pid} 总结 {url}（正文 {len(content)} 字符）"
+            )
+            resp = await context.llm_generate(
+                chat_provider_id=pid,
+                prompt=prompt,
+                system_prompt=system,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"[R插件][AI总结] 模型调用失败：{exc}")
+            yield event.plain_result(f"{identify_prefix}{name}（AI 总结）失败：模型调用出错（{exc}）")
+            return
+
+        summary = (getattr(resp, "completion_text", "") or "").strip()
     if not summary:
         yield event.plain_result(f"{identify_prefix}{name}（AI 总结）失败：模型没有返回内容，请稍后重试")
         return
@@ -381,7 +442,10 @@ async def process_summary_url(
     title = extract_title(summary, html_title)
     yield event.plain_result(f"《{title}》 预计阅读时间: {minutes} 分钟，总字数: {words}")
 
-    header = f"「R插件 x {model}（AstrBot 默认模型）」联合为您总结内容："
+    if use_yuanbao:
+        header = f"「R插件 x {model}」联合为您总结内容："
+    else:
+        header = f"「R插件 x {model}（AstrBot 默认模型）」联合为您总结内容："
     if not use_forward:
         yield event.plain_result(f"{header}\n\n{summary}")
         return

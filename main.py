@@ -261,7 +261,7 @@ class RPlugin(Star):
         self.yuanbao_cookie = str(
             self._cfg("YUANBAO_COOKIE", "") or ""
         ).strip() or str(self._cfg("WXCHANNEL_COOKIE", "") or "").strip()
-        self.yuanbao_model = str(self._cfg("YUANBAO_MODEL", "混元") or "混元")
+        self.yuanbao_model = str(self._cfg("YUANBAO_MODEL", "Hy3") or "Hy3")
         self.yuanbao_timeout = int(self._cfg("YUANBAO_TIMEOUT", 90) or 90)
         if self.yuanbao_timeout <= 0:
             self.yuanbao_timeout = 90
@@ -606,56 +606,8 @@ class RPlugin(Star):
             use_forward=self.summary_use_forward,
             system_prompt=self.summary_system_prompt,
             user_prompt=self.summary_user_prompt,
+            use_yuanbao=self.yuanbao_enabled,
+            yuanbao_cookie=self.yuanbao_cookie,
+            yuanbao_model=self.yuanbao_model,
         ):
             yield result
-
-    # ------------------------------------------------------------ 元宝模型
-
-    @filter.regex(r"^[#＃/／]{0,4}\s*元宝\s*([\s\S]*)$")
-    async def yuanbao_ask(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
-        """
-        用腾讯元宝自带的模型回答问题（Cookie 鉴权，不需要 API Key）。
-
-        签名要浏览器生成，第一次调用会慢几秒（起 chromium + 截签名），
-        之后在同一进程内复用签名与浏览器实例。
-        """
-        if not self.yuanbao_enabled or not self._enabled("yuanbao"):
-            return
-        try:
-            if str(event.get_self_id()) == str(event.get_sender_id()):
-                return
-        except Exception:  # noqa: BLE001
-            pass
-
-        question = (event.message_str or "").strip()
-        # 去掉命令前缀，留下真正的问题
-        question = re.sub(r"^[#＃/／]{0,4}\s*元宝\s*", "", question).strip()
-        if not question:
-            yield event.plain_result(
-                "用法：#元宝 <问题>\n例如：#元宝 用一句话解释什么是量子纠缠"
-            )
-            return
-
-        if not self.yuanbao_cookie:
-            yield event.plain_result(
-                "元宝未配置登录态：请在面板填「元宝 Cookie」（或复用视频号 Cookie）"
-            )
-            return
-
-        try:
-            answer = await yuanbao_mod.ask(
-                question,
-                cookie=self.yuanbao_cookie,
-                model=self.yuanbao_model,
-                timeout=self.yuanbao_timeout,
-            )
-        except yuanbao_mod.YuanbaoError as exc:
-            logger.warning(f"[R插件][元宝] 调用失败：{exc}")
-            yield event.plain_result(f"元宝临时不可用：{exc}")
-            return
-        except Exception as exc:  # noqa: BLE001
-            logger.error(f"[R插件][元宝] 未预期错误：{exc}")
-            yield event.plain_result("元宝调用出错，稍后再试")
-            return
-
-        yield event.plain_result(answer)

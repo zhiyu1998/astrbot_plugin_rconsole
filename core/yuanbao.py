@@ -64,12 +64,23 @@ EP_CLEAR = "/api/user/agent/conversation/v1/clear"
 # 默认智能体（元宝对话页用的那个，与视频号解析 referer 里一致）
 AGENT_ID = "naQivTmsDa"
 
-# 面板可选模型 -> 元宝的 chatModelId
+# 面板可选模型 -> 元宝的 chatModelId。
+#
+# 这份映射来自 `/api/agent/model/list`（实测 2026-11），返回体里是：
+#   Hy3      -> hunyuan_gpt_175B_0404（chooseDefault=true）
+#     └ 深度思考 -> hunyuan_t1
+#   DeepSeek -> deep_seek_v3
+#     └ 深度思考 -> deep_seek
+#
+# 网页 UI 上还能看到 "Hy4 New"，但接口对当前账号不返回它（应该是灰度 / 会员权限），
+# 所以这里只登记实际能拿到的。以后接口返回了，按同样格式加一行即可。
 MODEL_OPTIONS: Dict[str, str] = {
-    "混元": "hunyuan_gpt_175B_0404",
-    "DeepSeek-V3": "deep_seek_v3",
+    "Hy3": "hunyuan_gpt_175B_0404",
+    "Hy3 深度思考": "hunyuan_t1",
+    "DeepSeek": "deep_seek_v3",
+    "DeepSeek 深度思考": "deep_seek",
 }
-DEFAULT_MODEL = "混元"
+DEFAULT_MODEL = "Hy3"
 
 # chat 接口 body.model 固定这个值（与 chatModelId 不同，抓包确认）
 CHAT_API_MODEL = "gpt_175B_0404"
