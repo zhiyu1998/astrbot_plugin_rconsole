@@ -38,6 +38,7 @@ from .core.wxchannel import process_wxchannel_url
 from .core.youtube import check_proxy, process_youtube_url, set_cookie_file
 from .core.miyoushe import process_miyoushe_url
 from .core.netease import process_netease_url, quality_from_setting, send_mode_from_setting
+from .core import yuanbao as yuanbao_mod
 from .core.summary import detect_summary_target, process_summary_url
 from .core.weibo import process_weibo_url
 from .core.weishi import process_weishi_url
@@ -59,6 +60,7 @@ PLATFORM_ALIASES = {
     "youtube": "YouTube",
     "wxchannel": "微信视频号",
     "netease": "网易云",
+    "yuanbao": "元宝",
     "summary": "AI总结",
 }
 
@@ -252,6 +254,17 @@ class RPlugin(Star):
         if self.netease_audio_max_mb <= 0:
             self.netease_audio_max_mb = 30
         self.netease_send_mode = send_mode_from_setting(self._cfg("NETEASE_SEND_VOICE", "文件"))
+
+        # ---------------- 腾讯元宝（对话模型）
+        self.yuanbao_enabled = bool(self._cfg("YUANBAO_ENABLED", False))
+        # Cookie 留空就用视频号那份（同一个元宝登录态）
+        self.yuanbao_cookie = str(
+            self._cfg("YUANBAO_COOKIE", "") or ""
+        ).strip() or str(self._cfg("WXCHANNEL_COOKIE", "") or "").strip()
+        self.yuanbao_model = str(self._cfg("YUANBAO_MODEL", "混元") or "混元")
+        self.yuanbao_timeout = int(self._cfg("YUANBAO_TIMEOUT", 90) or 90)
+        if self.yuanbao_timeout <= 0:
+            self.yuanbao_timeout = 90
         self.netease_temp_fallback = bool(self._cfg("NETEASE_TEMP_FALLBACK", True))
 
         self.youtube_cookies = set_cookie_file(str(self._cfg("YOUTUBE_COOKIES", "") or ""))
@@ -343,6 +356,11 @@ class RPlugin(Star):
             card_parser.uninstall()
         if getattr(self, "tg_send_compat", False):
             tg_patch.uninstall()
+        # 元宝的 chromium 是常驻进程，插件重载/卸载时必须收掉，否则会攒一堆
+        try:
+            await yuanbao_mod.shutdown()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"[R插件][元宝] 关闭浏览器失败：{exc}")
         logger.info("[R插件] 已卸载")
 
     # ------------------------------------------------------------ 抖音
@@ -590,3 +608,54 @@ class RPlugin(Star):
             user_prompt=self.summary_user_prompt,
         ):
             yield result
+
+    # ------------------------------------------------------------ 元宝模型
+
+    @filter.regex(r"^[#＃/／]{0,4}\s*元宝\s*([\s\S]*)$")
+    async def yuanbao_ask(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
+        """
+        用腾讯元宝自带的模型回答问题（Cookie 鉴权，不需要 API Key）。
+
+        签名要浏览器生成，第一次调用会慢几秒（起 chromium + 截签名），
+        之后在同一进程内复用签名与浏览器实例。
+        """
+        if not self.yuanbao_enabled or not self._enabled("yuanbao"):
+            return
+        try:
+            if str(event.get_self_id()) == str(event.get_sender_id()):
+                return
+        except Exception:  # noqa: BLE001
+            pass
+
+        question = (event.message_str or "").strip()
+        # 去掉命令前缀，留下真正的问题
+        question = re.sub(r"^[#＃/／]{0,4}\s*元宝\s*", "", question).strip()
+        if not question:
+            yield event.plain_result(
+                "用法：#元宝 <问题>\n例如：#元宝 用一句话解释什么是量子纠缠"
+            )
+            return
+
+        if not self.yuanbao_cookie:
+            yield event.plain_result(
+                "元宝未配置登录态：请在面板填「元宝 Cookie」（或复用视频号 Cookie）"
+            )
+            return
+
+        try:
+            answer = await yuanbao_mod.ask(
+                question,
+                cookie=self.yuanbao_cookie,
+                model=self.yuanbao_model,
+                timeout=self.yuanbao_timeout,
+            )
+        except yuanbao_mod.YuanbaoError as exc:
+            logger.warning(f"[R插件][元宝] 调用失败：{exc}")
+            yield event.plain_result(f"元宝临时不可用：{exc}")
+            return
+        except Exception as exc:  # noqa: BLE001
+            logger.error(f"[R插件][元宝] 未预期错误：{exc}")
+            yield event.plain_result("元宝调用出错，稍后再试")
+            return
+
+        yield event.plain_result(answer)

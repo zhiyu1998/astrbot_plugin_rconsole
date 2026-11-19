@@ -499,5 +499,31 @@
     "description": "【AI 总结】用户提示词模板",
     "hint": "可用占位符：{url} 网页地址、{content} 网页正文。留空 = 使用内置默认模板。",
     "default": "这是网页链接: {url}\n\n网页正文如下：\n{content}\n\n请根据以上内容进行总结。"
+  },
+  "YUANBAO_ENABLED": {
+    "description": "【腾讯元宝】启用元宝模型对话",
+    "type": "bool",
+    "default": false,
+    "hint": "开启后可用「#元宝 <问题>」直接问元宝自带模型。依赖服务器上的 chromium（首次调用要起浏览器，慢几秒）"
+  },
+  "YUANBAO_MODEL": {
+    "description": "【腾讯元宝】使用的模型",
+    "type": "string",
+    "default": "混元",
+    "options": [
+      "混元",
+      "DeepSeek-V3"
+    ]
+  },
+  "YUANBAO_COOKIE": {
+    "description": "【腾讯元宝】元宝 Web 端 Cookie（留空复用视频号 Cookie）",
+    "type": "string",
+    "default": "",
+    "hint": "从 yuanbao.tencent.com 复制整串 Cookie。与视频号解析共用同一份登录态时留空即可"
+  },
+  "YUANBAO_TIMEOUT": {
+    "description": "【腾讯元宝】单次对话超时（秒）",
+    "type": "int",
+    "default": 90
   }
 }
