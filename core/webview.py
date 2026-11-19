@@ -19,8 +19,30 @@ from typing import Any, Dict, List
 from astrbot.api import logger
 from astrbot.api.web import error_response, json_response, request
 
-# 这些字段不回传真实值，只告诉前端「有没有配置过」
-SECRET_MARKERS = ("CK", "COOKIE", "SESSDATA", "TOKEN", "SECRET", "PASSWORD", "KEY")
+# 这些字段不回传真实值，只告诉前端「有没有配置过」。
+# 注意：**必须按段 / 后缀匹配**，不能用子串 —— 否则 FALLBACK 里的 "CK"
+# 会把普通布尔开关误判成密钥（实测踩过）。
+SECRET_SEGMENTS = {
+    "CK",
+    "COOKIE",
+    "COOKIES",
+    "SESSDATA",
+    "TOKEN",
+    "SECRET",
+    "PASSWORD",
+    "PASSWD",
+    "APIKEY",
+}
+SECRET_SUFFIXES = (
+    "_CK",
+    "_COOKIE",
+    "_COOKIES",
+    "_SESSDATA",
+    "_TOKEN",
+    "_SECRET",
+    "_PASSWORD",
+    "_KEY",
+)
 _TRUE = {"true", "1", "on", "yes", "是"}
 
 # 值需要从 AstrBot 运行时动态拉取的字段：key -> 数据源名
@@ -30,8 +52,19 @@ DYNAMIC_OPTION_FIELDS = {
 
 
 def _is_secret(key: str) -> bool:
+    """
+    判断某个配置项是否属于「密钥类」，需要对前端脱敏。
+
+    不能直接用子串匹配：`NETEASE_QUALITY_FALLBACK` / `NETEASE_TEMP_FALLBACK`
+    里的 `FALLB**ACK**` 含有 "CK"，会被误判成密钥 —— 前端拿到空串，
+    布尔开关一律显示成「已关闭」，保存时又因为「空值代表不修改」而存不进去。
+    所以这里按 `_` 分段匹配整段，或按后缀匹配。
+    """
     upper = key.upper()
-    return any(marker in upper for marker in SECRET_MARKERS)
+    segments = set(upper.split("_"))
+    if segments & SECRET_SEGMENTS:
+        return True
+    return upper.endswith(SECRET_SUFFIXES)
 
 
 def _split_desc(desc: str):
