@@ -44,7 +44,7 @@ import subprocess
 import tempfile
 import time
 import urllib.request
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 import websockets
@@ -64,22 +64,28 @@ EP_CLEAR = "/api/user/agent/conversation/v1/clear"
 # 默认智能体（元宝对话页用的那个，与视频号解析 referer 里一致）
 AGENT_ID = "naQivTmsDa"
 
-# 面板可选模型 -> 元宝的 chatModelId。
+# 面板可选模型。
 #
-# 这份映射来自 `/api/agent/model/list`（实测 2026-11），返回体里是：
-#   Hy3      -> hunyuan_gpt_175B_0404（chooseDefault=true）
-#     └ 深度思考 -> hunyuan_t1
-#   DeepSeek -> deep_seek_v3
-#     └ 深度思考 -> deep_seek
+# 元组是 (chatModelId, chatModelExtInfo.modelId, plugin)：
+#   * chatModelId          —— 真正选中的模型
+#   * chatModelExtInfo.modelId —— 元宝的「基础模型」。Hy4 系列固定填 hunyuan_quick_hy4，
+#                             实际档位由 agentModeModelSetting.modelId 决定（抓包确认）
+#   * plugin               —— Hy4 的深度思考/专家档要带 "Adaptive"
 #
-# 网页 UI 上还能看到 "Hy4 New"，但接口对当前账号不返回它（应该是灰度 / 会员权限），
-# 所以这里只登记实际能拿到的。以后接口返回了，按同样格式加一行即可。
-MODEL_OPTIONS: Dict[str, str] = {
-    "Hy3": "hunyuan_gpt_175B_0404",
-    "Hy3 深度思考": "hunyuan_t1",
-    "DeepSeek": "deep_seek_v3",
-    "DeepSeek 深度思考": "deep_seek",
+# Hy3 / DeepSeek 两项来自 `/api/agent/model/list` 的实测返回；
+# Hy4 的三档该接口不返回（灰度/会员），是照真实抓包补齐的，实测可用。
+MODEL_SPECS: Dict[str, Tuple[str, str, str]] = {
+    "Hy3": ("hunyuan_gpt_175B_0404", "hunyuan_gpt_175B_0404", ""),
+    "Hy3 深度思考": ("hunyuan_t1", "hunyuan_t1", ""),
+    "DeepSeek": ("deep_seek_v3", "deep_seek_v3", ""),
+    "DeepSeek 深度思考": ("deep_seek", "deep_seek", ""),
+    "Hy4 快速": ("hunyuan_quick_hy4", "hunyuan_quick_hy4", ""),
+    "Hy4 深度思考": ("hunyuan_deep_hy4", "hunyuan_quick_hy4", "Adaptive"),
+    "Hy4 专家": ("hunyuan_omnipotent_hy4", "hunyuan_quick_hy4", "Adaptive"),
 }
+
+# 兼容旧名：resolve_model 仍返回 chatModelId 字符串
+MODEL_OPTIONS: Dict[str, str] = {k: v[0] for k, v in MODEL_SPECS.items()}
 DEFAULT_MODEL = "Hy3"
 
 # chat 接口 body.model 固定这个值（与 chatModelId 不同，抓包确认）
@@ -187,6 +193,21 @@ def resolve_model(name: str) -> str:
         if label.lower() == key.lower():
             return model_id
     return MODEL_OPTIONS[DEFAULT_MODEL]
+
+
+def resolve_spec(name: str) -> Tuple[str, str, str]:
+    """
+    面板取值 -> (chatModelId, extInfo.modelId, plugin)。
+
+    支持传中文标签（Hy3 / Hy4 深度思考…）或直接传 chatModelId。
+    """
+    key = (name or "").strip()
+    if key in MODEL_SPECS:
+        return MODEL_SPECS[key]
+    for label, spec in MODEL_SPECS.items():
+        if spec[0] == key:
+            return spec
+    return MODEL_SPECS[DEFAULT_MODEL]
 
 
 def clean_reply(text: str) -> str:
@@ -565,7 +586,8 @@ class YuanbaoClient:
     ) -> None:
         self.cookie = cookie or ""
         self.signer = signer
-        self.model_id = resolve_model(model)
+        # (chatModelId, extInfo.modelId, plugin)
+        self.model_id, self.ext_model_id, self.model_plugin = resolve_spec(model)
         self.timeout = timeout
 
     # ---- 内部 ----
@@ -586,10 +608,15 @@ class YuanbaoClient:
         return headers
 
     def _ext_info_for(self, model_id: str) -> str:
-        # 必须带 agentModeModelSetting，否则模型切换不生效（实测）
+        """
+        必须带 agentModeModelSetting，否则模型切换不生效（实测）。
+
+        注意两处 modelId 不总相同：Hy4 系列的基础模型恒为 hunyuan_quick_hy4，
+        真正的档位在 agentModeModelSetting 里（如 hunyuan_deep_hy4）。
+        """
         return json.dumps(
             {
-                "modelId": model_id,
+                "modelId": self.ext_model_id,
                 "agentModeModelSetting": {"modelId": model_id},
                 "subModelId": "",
                 "supportFunctions": {"internetSearch": ""},
@@ -635,7 +662,7 @@ class YuanbaoClient:
         body = {
             "model": CHAT_API_MODEL,
             "prompt": prompt,
-            "plugin": "",
+            "plugin": self.model_plugin,
             "displayPrompt": prompt,
             "displayPromptType": 1,
             "agentId": AGENT_ID,
@@ -692,10 +719,19 @@ class YuanbaoClient:
                 if kind == "error":
                     error_text = str(obj.get("msg") or obj.get("error") or "未知错误")
                     break
+                # 普通模型：{"type":"text","msg":"增量"}
                 if kind == "text" and isinstance(obj.get("msg"), str):
                     parts.append(obj["msg"])
-                    if sum(len(p) for p in parts) > MAX_REPLY_CHARS * 2:
-                        break
+                # Hy4 系列走这个：{"type":"deepSearchAgent","contents":[{"type":"text"/"think","text":"增量"}]}
+                # contents[].type == "think" 是思考过程，不能当正文
+                elif kind == "deepSearchAgent":
+                    for item in obj.get("contents") or []:
+                        if not isinstance(item, dict):
+                            continue
+                        if item.get("type") == "text" and isinstance(item.get("text"), str):
+                            parts.append(item["text"])
+                if sum(len(p) for p in parts) > MAX_REPLY_CHARS * 2:
+                    break
 
         if error_text:
             if "服务繁忙" in error_text:

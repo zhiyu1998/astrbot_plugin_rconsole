@@ -514,9 +514,12 @@
       "Hy3",
       "Hy3 深度思考",
       "DeepSeek",
-      "DeepSeek 深度思考"
+      "DeepSeek 深度思考",
+      "Hy4 快速",
+      "Hy4 深度思考",
+      "Hy4 专家"
     ],
-    "hint": "Hy3 是元宝默认模型；带「深度思考」的走子模型（hunyuan_t1 / deep_seek），更慢但推理更细。网页上还有个 Hy4 New，接口对当前账号不返回，暂不可选"
+    "hint": "Hy3 是元宝默认模型；带「深度思考」的走子模型，更慢但推理更细。Hy4 三档对应网页上的 Instant / Thinking / Expert"
   },
   "YUANBAO_COOKIE": {
     "description": "【腾讯元宝】元宝 Web 端 Cookie（留空复用视频号 Cookie）",
