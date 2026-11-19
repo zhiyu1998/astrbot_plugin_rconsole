@@ -504,7 +504,7 @@
     "description": "【腾讯元宝】AI 总结改用元宝模型",
     "type": "bool",
     "default": false,
-    "hint": "开启后「总结一下 <链接>」交给元宝的模型处理，不再占用 AstrBot 的对话模型配额。依赖服务器上的 chromium（首次调用要起浏览器，慢几秒）"
+    "hint": "关闭时「总结一下 <链接>」用 AstrBot 里配置的对话模型；开启后改走元宝（需要下面的 Cookie，留空则复用视频号那份）。首次调用要启动浏览器生成签名，会比平时慢几秒"
   },
   "YUANBAO_MODEL": {
     "description": "【腾讯元宝】使用的模型",
