@@ -31,7 +31,7 @@ from .core.common import (
     set_proxy,
     set_temp_dir,
 )
-from .core.douyin import process_douyin_url
+from .core.douyin import process_douyin_url, cleanup_abogus
 from .core.general import process_general_url
 from .core.webview import register_view_apis
 from .core.wxchannel import process_wxchannel_url
@@ -361,6 +361,11 @@ class RPlugin(Star):
             await yuanbao_mod.shutdown()
         except Exception as exc:  # noqa: BLE001
             logger.warning(f"[R插件][元宝] 关闭浏览器失败：{exc}")
+        # a_bogus 签名的 V8 上下文同理，留着就是残留的 Isolate
+        try:
+            cleanup_abogus()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"[R插件] 释放 JS 上下文失败：{exc}")
         logger.info("[R插件] 已卸载")
 
     # ------------------------------------------------------------ 抖音

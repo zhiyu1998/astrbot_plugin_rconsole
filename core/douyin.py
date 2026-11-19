@@ -14,6 +14,7 @@ import datetime
 import json
 import os
 import re
+import threading
 from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 
 import astrbot.api.message_components as Comp
@@ -59,40 +60,101 @@ from .common import (
     video_components,
 )
 
-# 尝试导入 execjs，失败则跳过 a_bogus 签名（SSR 兜底不需要签名）
+# a_bogus 签名要跑一段 JS。用 never-jscore（Rust + deno_core/V8 的 Python 绑定），
+# 替代早已停止维护的 PyExecJS：后者每次调用都要拉起 node 子进程 + JSON 往返，
+# 单次约 2ms，还依赖宿主机装 node。never-jscore 是进程内的，实测单次 2ms 且上下文可复用。
+#
+# 注意两点（都踩过）：
+#   * 必须 enable_node_compat=True —— a-bogus.js 末尾有 module.exports，
+#     不开会报 ReferenceError: module is not defined，而且这个错误会让 V8 直接崩进程
+#   * Context 不是线程安全的，所以用 ThreadLocal 每线程各持一个，别跨线程共享
 try:
     import urllib.parse
 
-    import execjs
+    import never_jscore
 
-    HAS_EXECJS = True
+    HAS_JSCORE = True
 except ImportError:  # pragma: no cover - 取决于运行环境
     import urllib.parse
 
-    HAS_EXECJS = False
-    logger.warning("[R插件] 未安装 PyExecJS，抖音 Cookie 接口将跳过 a_bogus 签名")
+    never_jscore = None  # type: ignore[assignment]
+    HAS_JSCORE = False
+    logger.warning("[R插件] 未安装 never-jscore，抖音 Cookie 接口将跳过 a_bogus 签名")
+
+_ABOGUS_SOURCE = ""
+_ABOGUS_LOCAL = threading.local()
 
 
 def _abogus_file_path() -> str:
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "a-bogus.js")
 
 
-def generate_a_bogus(query: str, user_agent: str) -> str:
-    """生成抖音 a_bogus 参数，失败返回空串"""
-    if not HAS_EXECJS:
-        return ""
+def _abogus_source() -> str:
+    """读一次 a-bogus.js 缓存在内存里（16KB，反复读盘没意义）"""
+    global _ABOGUS_SOURCE
+    if _ABOGUS_SOURCE:
+        return _ABOGUS_SOURCE
     path = _abogus_file_path()
     if not os.path.exists(path):
         logger.warning(f"[R插件] 找不到 a-bogus.js: {path}")
         return ""
     try:
         with open(path, "r", encoding="utf-8") as fp:
-            js = fp.read()
-        return execjs.compile(js).call("generate_a_bogus", query, user_agent)
+            _ABOGUS_SOURCE = fp.read()
+    except OSError as exc:  # noqa: BLE001
+        logger.warning(f"[R插件] 读取 a-bogus.js 失败: {exc}")
+        return ""
+    return _ABOGUS_SOURCE
+
+
+def _abogus_context():
+    """
+    取当前线程的 JS 上下文（首次调用时编译，之后复用）。
+
+    复用是关键：never-jscore 官方实测，Context 复用比每次重建快 300 倍以上
+    （每次重建都要新建 V8 Isolate）。反过来，跨线程共享同一个 Context 会崩，
+    所以放 ThreadLocal 里，一个线程一份。
+    """
+    ctx = getattr(_ABOGUS_LOCAL, "ctx", None)
+    if ctx is not None:
+        return ctx
+    source = _abogus_source()
+    if not source:
+        return None
+    ctx = never_jscore.Context(enable_node_compat=True)
+    ctx.compile(source)
+    _ABOGUS_LOCAL.ctx = ctx
+    return ctx
+
+
+def generate_a_bogus(query: str, user_agent: str) -> str:
+    """生成抖音 a_bogus 参数，失败返回空串"""
+    if not HAS_JSCORE or never_jscore is None:
+        return ""
+    try:
+        ctx = _abogus_context()
+        if ctx is None:
+            return ""
+        return ctx.call("generate_a_bogus", [query, user_agent])
     except Exception as exc:  # noqa: BLE001
         # 签名失败不影响主流程（分享页 SSR 不需要签名），降级成 warning 免得刷错误
         logger.warning(f"[R插件] 生成 a_bogus 失败（回退到无签名/SSR 链路）: {exc}")
         return ""
+
+
+def cleanup_abogus() -> None:
+    """释放当前线程的 JS 上下文（插件卸载时调用，避免 V8 Isolate 残留）"""
+    ctx = getattr(_ABOGUS_LOCAL, "ctx", None)
+    if ctx is None:
+        return
+    try:
+        del ctx
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        del _ABOGUS_LOCAL.ctx
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _looks_like_media(url: Any) -> bool:

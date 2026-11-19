@@ -1,6 +1,6 @@
 httpx[socks]>=0.27.0
 aiofiles>=23.2.1
 bilibili-api-python>=17.3.0
-PyExecJS>=1.5.1
+never-jscore>=2.5.2
 yt-dlp>=2025.1.15
 PySocks>=1.7.1
