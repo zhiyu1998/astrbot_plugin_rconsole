@@ -91,6 +91,12 @@ NETEASE_REFERER = "https://music.163.com/"
 # 超过这个体积改成提示，避免把几十 MB 的 base64 塞进协议端
 FILE_BASE64_MAX_MB = 20
 
+# 非 OneBot 平台（Telegram 等）发语音的体积上限。
+# Telegram 的 sendVoice 对体积/时长限制很严，实测 5.4MB 的 mp3 直接被 413
+# （NetworkError: Request Entity Too Large）拒掉，而且 AstrBot 的 fallback
+# 只处理「隐私设置不让收语音」那一类错误，不会退回文档。
+VOICE_MAX_MB_NON_ONEBOT = 1.0
+
 _URL_RE = re.compile(r"https?://[^\s\"'<>（）()【】\[\]]+", re.IGNORECASE)
 _SHORT_HOST_RE = re.compile(r"(?:^|//)163cn\.tv/([A-Za-z0-9]+)", re.IGNORECASE)
 _ID_IN_QUERY_RE = re.compile(r"[?&#]id=(\d+)")
@@ -880,6 +886,48 @@ def build_info_text(
     return "\n".join(lines)
 
 
+def _onebot_api(event: AstrMessageEvent) -> Any:
+    """拿到 OneBot(aiocqhttp) 的 api 对象；其它平台返回 None。"""
+    return getattr(getattr(event, "bot", None), "api", None)
+
+
+async def _deliver_via_component(
+    event: AstrMessageEvent,
+    path: str,
+    ext: str,
+    display_name: str,
+    send_mode: str,
+) -> Any:
+    """
+    非 OneBot 平台（Telegram / Discord / QQ 官方等）走 AstrBot 的消息组件。
+
+    这些适配器对 Comp.File 有自己的实现（Telegram 是 send_document），
+    能直接吃本地路径，**不存在 NapCat 那种容器看不到路径的问题**。
+    """
+    if send_mode in ("card", "voice"):
+        try:
+            size = os.path.getsize(path)
+        except OSError:
+            size = 0
+        # 语音：只有体积足够小才走 Record，否则大音频会被协议端直接拒
+        if send_mode == "voice" and size and size <= VOICE_MAX_MB_NON_ONEBOT * 1024 * 1024:
+            voice_path = path
+            if ext != "mp3":
+                converted = await convert_audio_to_mp3(path)
+                if converted:
+                    voice_path = converted
+            if voice_path.lower().endswith(".mp3"):
+                release_file(voice_path, 180.0)
+                return event.chain_result([Comp.Record(file=voice_path)])
+        logger.info(
+            "[R插件][网易云] 当前平台不支持音乐卡片或语音发不了（音频"
+            f"{size / 1024 / 1024:.1f}MB），改发文件"
+        )
+
+    release_file(path, 300.0)
+    return event.chain_result([Comp.File(file=path, name=display_name)])
+
+
 async def _send_audio(
     event: AstrMessageEvent,
     path: str,
@@ -897,6 +945,12 @@ async def _send_audio(
       但容器格式（flac/ape）对端不一定认，所以先转 320k mp3。
     * 文件：非 mp3 且转码失败时退回文件发送。
     """
+    api = _onebot_api(event)
+    if api is None:
+        # Telegram 等平台没有 OneBot 接口，卡片与群文件上传都无从谈起，
+        # 交给组件层：Telegram 的 Comp.File 会走 send_document
+        return await _deliver_via_component(event, path, ext, display_name, send_mode)
+
     if send_mode == "card":
         pushed, error = await _push_card(event, song, source)
         if pushed:

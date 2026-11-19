@@ -124,41 +124,13 @@ Cookie 获取：浏览器登录对应网站 → `F12` → **Network** → 随便
 | 微信视频号 | ✅ | 走腾讯元宝接口，需填元宝 Cookie |
 | AI 总结 | ✅ | 微信文章 / ArXiv / 少数派 / B站专栏 / 知乎 / GitHub / V2EX，用 AstrBot 当前会话的模型 |
 | Telegram 发送适配 | ✅ | 文字先行 + 上传超时放宽（5s→60s）+ 组件级重试，封面图超时不会再吞掉文案 |
-| 网易云音乐 | ✅ | 单曲 / 播客链接解析，音质逐级回退 + 体积上限 |
+| 网易云音乐 | ✅ | 单曲 / 播客链接解析（需自建 NeteaseCloudMusicApi） |
 
 > ✅ 可用　⚠️ 依赖外部接口　❌ 未迁移
 
 插件还会把 **QQ 小程序 / 分享卡片**（OneBot `json` 消息段）解析成可读文本，所以从 QQ 直接分享的
 B站、小红书、抖音等卡片也能识别——否则这类消息在 AstrBot 里只有一个 `[ComponentType.Json]`，
 正则路由根本进不来。对应配置项 `CARD_PARSE_ENABLED`。
-
-## 网易云音乐
-
-只做链接 / 卡片的音频解析，没有点歌指令。
-
-需要先自建一个 [NeteaseCloudMusicApi](https://gitlab.com/Binaryify/neteasecloudmusicapi)（插件只做客户端，
-不内置任何账号），把地址填进面板的 `NETEASE_API_SERVER`；再按需填 `NETEASE_COOKIE`——VIP 账号才能解析
-无损 / Hi-Res / 超清母带，不填只能到「极高」。
-
-发网易云的单曲链接、播客链接、`163cn.tv` 短链，或者 QQ 里转发的网易云音乐卡片，
-都会解析成「歌曲信息 + 封面 + 音频」。
-
-识别文案里**不带**网易云链接：带上以后，同群其它机器人会再次命中路由，形成互相识别的死循环。
-
-音频是**绕开消息组件、直接调 OneBot 接口**发出去的：AstrBot 的 `Comp.File` 按字段名序列化，实际发出的是 `data.file_`（带下划线），NapCat 认不出会回「文件消息缺少参数」；而传宿主机绝对路径又会被容器隔离成 ENOENT。两条路都堵，所以改用 `upload_group_file` / `upload_private_file` + base64 内容直接上传。
-
-| 配置项 | 默认 | 说明 |
-| --- | --- | --- |
-| `NETEASE_API_SERVER` | 空 | 自建 API 地址，例 `http://127.0.0.1:3000` |
-| `NETEASE_COOKIE` | 空 | `MUSIC_U=xxx`，VIP 账号才能解析无损及以上 |
-| `NETEASE_QUALITY` | 极高 | 解析最高音质（母带单曲可能 200MB 以上） |
-| `NETEASE_QUALITY_FALLBACK` | 开 | 首选音质拿不到时逐级降档，而不是直接失败 |
-| `NETEASE_AUDIO_MAX_MB` | 30 | 音频体积上限；超限继续降档，全部超限只发文字 |
-| `NETEASE_SEND_VOICE` | 文件 | 卡片 = QQ 音乐卡片（点开即看/听）；语音 = 无损先转 320k mp3 再发语音；文件 = 以群文件形式上传（可保存，单条上限 20MB） |
-| `NETEASE_TEMP_FALLBACK` | 开 | 自建 API 拿不到音源时，用第三方临时接口兜底 |
-
-不发音乐卡片：AstrBot 的 `aiocqhttp` 适配器只特判 `Image/Record/File/Video`，`Comp.Music` 落不到
-OneBot 的 `music` 段，发出去是坏卡片。这里改用「歌曲信息 + 封面 + 音频」的组合，各协议端都能收到。
 
 ## 待完善...
 
