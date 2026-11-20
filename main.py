@@ -46,7 +46,7 @@ from .core.xhs import process_xiaohongshu_url
 from .core.xiaoheihe import process_xiaoheihe_url
 
 PLUGIN_NAME = "astrbot_plugin_rconsole"
-VERSION = "1.2.13"
+VERSION = "1.2.14"
 PLATFORM_ALIASES = {
     "douyin": "抖音",
     "bilibili": "哔哩哔哩",
@@ -107,7 +107,7 @@ BILIBILI_ROUTE_REGEX = (
     "RrOrange",
     "R插件迁移版：抖音/B站/快手/微博/AcFun/小红书/米游社/小黑盒/微视/YouTube/微信视频号 "
     "链接解析 + AI 总结（已适配 Telegram 发送）",
-    "1.2.13",
+    "1.2.14",
 )
 class RPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
