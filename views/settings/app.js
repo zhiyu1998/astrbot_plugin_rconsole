@@ -126,6 +126,19 @@ function fallbackCopy(text) {
 
 /* ---------------------------------------------------------------- 主题切换 */
 
+// 顶栏 logo：图能加载就显示图，加载不出来（离线/文件缺失）退回流光底 + R
+function initBrandLogo() {
+  const box = $("#brandLogo");
+  const img = $("#brandLogoImg");
+  if (!box || !img) return;
+  const fallback = () => box.classList.remove("has-img");
+  if (img.complete && !img.naturalWidth) {
+    fallback();
+    return;
+  }
+  img.addEventListener("error", fallback, { once: true });
+}
+
 function initTheme() {
   try {
     const saved = localStorage.getItem("r_plugin_theme");
@@ -1033,6 +1046,7 @@ function bind() {
 
 (async function main() {
   initTheme();
+  initBrandLogo();
   if (!bridge) {
     document.body.innerHTML =
       '<div class="skeleton" style="margin:32px auto;max-width:460px;">bridge 未注入，请在 AstrBot WebUI 中打开本视图。</div>';
