@@ -43,7 +43,7 @@ desc: |
   - Telegram 上自动改用「先文字、后媒体」的发送顺序（`TG_SEND_COMPAT`，默认开）
 
   安装后到面板「插件 → R插件」里填 Cookie 即可，XHH_CK（小黑盒）必填，BILI_SESSDATA 影响 B 站画质。
-version: v1.2.14
+version: v1.2.15
 author: zhiyu1998
 repo: https://github.com/zhiyu1998/astrbot_plugin_rconsole
 astrbot_version: ">=4.5.0,<5"
