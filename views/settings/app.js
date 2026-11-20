@@ -62,6 +62,8 @@ const state = {
   edited: new Set(),
   providers: [],
   providersLoaded: false,
+  platforms: [],
+  platformBusy: new Set(),
 };
 
 /* ---------------------------------------------------------------- 工具函数 */
@@ -183,6 +185,89 @@ function markChanged(key, changed = true) {
   document.querySelectorAll(`.field[data-key="${CSS.escape(key)}"]`).forEach((el) => {
     el.classList.toggle("changed", changed);
   });
+}
+
+/* ---------------------------------------------------------------- 平台开关 */
+
+// 平台开关不是「改了再点保存」的那类配置：点一下就直接写盘 + 热应用，
+// 因为运行时入口每次都现读 DISABLED_PLATFORMS，改完立刻生效。
+
+function renderPlatformChips(host) {
+  if (!host) return;
+  host.innerHTML = "";
+  if (!state.platforms.length) {
+    const empty = document.createElement("span");
+    empty.className = "ps-empty";
+    empty.textContent = "正在读取平台列表…";
+    host.appendChild(empty);
+    return;
+  }
+  state.platforms.forEach((item) => {
+    const on = Boolean(item.enabled);
+    const busy = state.platformBusy.has(item.key);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `ps-chip ${on ? "on" : "off"}${busy ? " busy" : ""}`;
+    button.dataset.platform = item.key;
+    button.setAttribute("role", "switch");
+    button.setAttribute("aria-checked", on ? "true" : "false");
+    button.title = `${on ? "点击关闭" : "点击开启"}「${item.label}」的解析`;
+    button.disabled = busy;
+    button.innerHTML = `<span class="ps-dot" aria-hidden="true"></span><span class="ps-name">${escapeHtml(
+      item.label
+    )}</span>`;
+    host.appendChild(button);
+  });
+}
+
+function renderPlatformBar() {
+  const host = $("#platformBar");
+  if (!host) return;
+  host.innerHTML = `
+    <div class="ps-head">
+      <span class="ps-title">平台开关</span>
+      <span class="ps-hint">点一下即可开启 / 关闭该平台的解析，立即生效，无需保存</span>
+    </div>
+    <div class="ps-list" id="platformChips"></div>
+  `;
+  renderPlatformChips($("#platformChips"));
+}
+
+function paintPlatforms() {
+  renderPlatformChips($("#platformChips"));
+  renderPlatformChips($("#statusPlatformList"));
+}
+
+async function togglePlatform(key) {
+  const item = state.platforms.find((entry) => entry.key === key);
+  if (!item || state.platformBusy.has(key)) return;
+
+  const previous = item.enabled;
+  const next = !previous;
+  item.enabled = next; // 乐观更新：先给反馈，失败再回滚
+  state.platformBusy.add(key);
+  paintPlatforms();
+
+  try {
+    const result = await bridge.apiPost("view/platform", { key, enabled: next });
+    if (result && Array.isArray(result.platforms) && result.platforms.length) {
+      state.platforms = result.platforms;
+    }
+    toast(`已${next ? "开启" : "关闭"}「${item.label}」解析`);
+    // 状态页的统计数字跟着变，不然刚关掉一个平台还显示「已启用 3 / 3」
+    const on = state.platforms.filter((entry) => entry.enabled).length;
+    const total = state.platforms.length;
+    const badge = $("#statusPlatformCount");
+    if (badge) badge.textContent = `已启用 ${on} / ${total}`;
+    const kpi = $("#statusPlatformKpi");
+    if (kpi) kpi.textContent = `${on} / ${total}`;
+  } catch (error) {
+    item.enabled = previous;
+    toast(error.message || "平台开关切换失败", true);
+  } finally {
+    state.platformBusy.delete(key);
+    paintPlatforms();
+  }
 }
 
 /* ---------------------------------------------------------------- 渲染表单项 */
@@ -575,6 +660,12 @@ function renderPanel() {
   iconBox.innerHTML = iconFor(group.name);
   count.textContent = `${group.fields.length} 项`;
 
+  const bar = document.createElement("div");
+  bar.className = "platform-switchbar";
+  bar.id = "platformBar";
+  host.appendChild(bar);
+  renderPlatformBar();
+
   const card = document.createElement("div");
   card.className = "field-group-card";
   group.fields.forEach((field) => card.appendChild(renderField(field)));
@@ -697,7 +788,7 @@ async function loadStatus(probeProxy = false) {
       </div>
       <div class="kpi">
         <div class="kpi-top"><span>平台与凭据</span></div>
-        <div class="kpi-val">${enabledPlatforms} / ${platforms.length}</div>
+        <div class="kpi-val" id="statusPlatformKpi">${enabledPlatforms} / ${platforms.length}</div>
         <div class="kpi-sub">已配置 ${secretsReady} / ${secretEntries.length} 项凭据</div>
       </div>
     </div>
@@ -764,16 +855,10 @@ async function loadStatus(probeProxy = false) {
       <div class="card">
         <div class="card-head">
           <h3 class="card-title">${SVG_ICONS.layers}<span>平台开关</span></h3>
-          <span class="card-badge">已启用 ${enabledPlatforms} / ${platforms.length}</span>
+          <span class="card-badge" id="statusPlatformCount">已启用 ${enabledPlatforms} / ${platforms.length}</span>
         </div>
-        <div class="pill-list">
-          ${platforms
-            .map(
-              (item) =>
-                `<span class="pill ${item.enabled ? "on" : "off"}">${escapeHtml(item.label)}</span>`
-            )
-            .join("")}
-        </div>
+        <div class="pill-list" id="statusPlatformList"></div>
+        <div class="card-note">点一下平台就能直接开关它的解析，立即生效</div>
       </div>
 
       <div class="card">
@@ -790,6 +875,11 @@ async function loadStatus(probeProxy = false) {
       </div>
     </div>
   `;
+
+  // 平台开关：状态接口返回的列表就是开关的权威状态；
+  // 配置项页面的开关条也要跟着重绘（那里比状态页更早渲染）
+  state.platforms = platforms;
+  paintPlatforms();
 }
 
 /* ---------------------------------------------------------------- 交互绑定 */
@@ -849,6 +939,15 @@ function bind() {
       state.query = value === "__edited__" ? "" : value;
       renderPanel();
     }, 90);
+  });
+
+  // 平台开关：事件委托，列表重绘后不用重新绑
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    const chip = target && target.closest ? target.closest(".ps-chip") : null;
+    if (!chip) return;
+    event.preventDefault();
+    togglePlatform(chip.dataset.platform);
   });
 
   // 键盘快捷键：/ 聚焦搜索，Ctrl+S / Cmd+S 保存

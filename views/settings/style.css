@@ -1579,6 +1579,119 @@ body {
   opacity: 0.52;
 }
 
+/* ============================================================= 平台开关 */
+
+/* 平台开关是「点一下就生效」的即时控件，所以单独一套样式：
+   比普通 pill 多出 cursor / hover / focus 反馈，让人一眼知道能点。 */
+
+.platform-switchbar {
+  margin-bottom: 14px;
+  padding: 13px 16px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.ps-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.ps-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.ps-hint {
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+.ps-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.ps-chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--ink-3);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.14s ease, border-color 0.14s ease, background 0.14s ease,
+    transform 0.06s ease;
+}
+
+.ps-chip:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  color: var(--ink-2);
+  transform: translateY(-1px);
+}
+
+.ps-chip:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.ps-chip:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.ps-chip .ps-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--ink-3);
+  transition: background 0.14s ease, box-shadow 0.14s ease;
+}
+
+.ps-chip.on {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.ps-chip.on .ps-dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.ps-chip.off {
+  opacity: 0.6;
+}
+
+.ps-chip.busy {
+  cursor: progress;
+  opacity: 0.55;
+}
+
+.ps-empty {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.card-note {
+  margin-top: 9px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
 .ok-text {
   color: var(--ok);
   font-weight: 550;

@@ -5,12 +5,14 @@
   POST /<PLUGIN>/view/save    保存配置并热应用
   GET  /<PLUGIN>/view/status  运行状态与依赖诊断
   POST /<PLUGIN>/view/probe   连通性自检（代理 / 暂存目录）
+  POST /<PLUGIN>/view/platform 平台开关（点一下就立即生效）
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -129,6 +131,50 @@ def _dir_size(path: str) -> int:
 
 def _which(name: str) -> str:
     return shutil.which(name) or ""
+
+
+def _as_list(value: Any) -> List[str]:
+    """DISABLED_PLATFORMS / PROXY_PLATFORMS 这类 list 字段统一展开成字符串列表
+
+    允许写成 list，也允许写成「一行一个」或「逗号分隔」的字符串 ——
+    AstrBot 内置配置页里填的是字符串时也要能读。
+    """
+    if isinstance(value, (list, tuple, set)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [item.strip() for item in re.split(r"[\r\n,;，、]+", str(value or "")) if item.strip()]
+
+
+def _platform_states(plugin, config) -> List[Dict[str, Any]]:
+    """把 DISABLED_PLATFORMS 展开成「平台 -> 是否启用」，给视图里的平台开关用
+
+    注意配置里可以写英文 key（douyin）也可以写中文名（抖音），两边都要认，
+    否则面板上显示「已开启」而运行时其实是关掉的。
+    """
+    disabled = {item.lower() for item in _as_list(config.get("DISABLED_PLATFORMS"))}
+    states: List[Dict[str, Any]] = []
+    for key, label in (getattr(plugin, "platform_labels", {}) or {}).items():
+        off = key.lower() in disabled or str(label).strip().lower() in disabled
+        states.append({"key": key, "label": label, "enabled": not off})
+    return states
+
+
+async def _save_config(plugin, config) -> str:
+    """把配置写盘并热应用；正常返回空串，出问题返回给前端看的错误文本"""
+    try:
+        saver = getattr(config, "save_config_async", None)
+        if callable(saver):
+            await saver()
+        else:
+            config.save_config()
+    except Exception as exc:  # noqa: BLE001
+        logger.error(f"[R插件] 写配置文件失败: {exc}")
+        return f"写配置文件失败: {exc}"
+    try:
+        plugin.apply_runtime_settings()
+    except Exception as exc:  # noqa: BLE001
+        logger.error(f"[R插件] 热应用配置失败: {exc}")
+        return f"热应用配置失败: {exc}"
+    return ""
 
 
 def register_view_apis(context, plugin, plugin_name: str) -> None:
@@ -275,10 +321,9 @@ def register_view_apis(context, plugin, plugin_name: str) -> None:
             else:
                 proxy_info["ok"] = None
 
-        platforms = []
-        disabled = {str(item).lower() for item in (config.get("DISABLED_PLATFORMS") or [])}
-        for key, label in (getattr(plugin, "platform_labels", {}) or {}).items():
-            platforms.append({"key": key, "label": label, "enabled": key.lower() not in disabled})
+        # 平台开关：DISABLED_PLATFORMS 里可能写英文 key 也可能写中文名，
+        # 统一走 _platform_states 判定，避免面板显示「开」而运行时其实是关的
+        platforms = _platform_states(plugin, config)
 
         return json_response(
             {
@@ -393,10 +438,71 @@ def register_view_apis(context, plugin, plugin_name: str) -> None:
 
         return error_response(f"未知的探测目标: {target}", status_code=400)
 
+    async def page_platform():
+        """点一下平台开关就立即生效：改 DISABLED_PLATFORMS → 写盘 → 热应用
+
+        运行时解析入口每次都用 `_enabled()` 现读配置，所以这里改完立刻生效，
+        不需要重启插件。传 `enabled` 是设置成指定状态；不传就是翻转。
+        """
+        payload = await request.json(default={})
+        payload = payload if isinstance(payload, dict) else {}
+        key = str(payload.get("key") or "").strip()
+        if not key:
+            return error_response("缺少平台标识 key", status_code=400)
+
+        labels = getattr(plugin, "platform_labels", {}) or {}
+        canonical = next((item for item in labels if item.lower() == key.lower()), "")
+        if not canonical:
+            # 也允许直接传中文名（抖音 / 哔哩哔哩 …）
+            canonical = next(
+                (item for item, label in labels.items() if str(label).strip() == key), ""
+            )
+        if not canonical:
+            return error_response(f"未知平台: {key}", status_code=404)
+        label = str(labels[canonical]).strip()
+
+        config = _config()
+        disabled = _as_list(config.get("DISABLED_PLATFORMS"))
+        blocked = {canonical.lower(), label.lower()}
+        current = not any(item.lower() in blocked for item in disabled)
+
+        enabled = payload.get("enabled")
+        if isinstance(enabled, str):
+            enabled = enabled.strip().lower() in _TRUE
+        enabled = (not current) if enabled is None else bool(enabled)
+
+        # 顺手把中文名形式的旧条目一起清掉，避免同一平台在列表里出现两次
+        rest = [item for item in disabled if item.lower() not in blocked]
+        if not enabled:
+            rest.append(canonical)
+
+        try:
+            config["DISABLED_PLATFORMS"] = rest
+        except Exception as exc:  # noqa: BLE001
+            return error_response(f"写入配置失败: {exc}", status_code=500)
+
+        error = await _save_config(plugin, config)
+        if error:
+            return error_response(error, status_code=500)
+
+        logger.info(f"[R插件] 平台开关：{label} → {'开启' if enabled else '关闭'}")
+        return json_response(
+            {
+                "key": canonical,
+                "label": label,
+                "enabled": enabled,
+                "disabled": rest,
+                "platforms": _platform_states(plugin, config),
+            }
+        )
+
     context.register_web_api(f"/{plugin_name}/view/schema", page_schema, ["GET"], "R插件配置结构")
     context.register_web_api(f"/{plugin_name}/view/save", page_save, ["POST"], "R插件保存配置")
     context.register_web_api(f"/{plugin_name}/view/status", page_status, ["GET"], "R插件运行状态")
     context.register_web_api(f"/{plugin_name}/view/probe", page_probe, ["POST"], "R插件连通性探测")
+    context.register_web_api(
+        f"/{plugin_name}/view/platform", page_platform, ["POST"], "R插件平台开关"
+    )
     context.register_web_api(
         f"/{plugin_name}/view/providers", page_providers, ["GET"], "R插件可用模型列表"
     )
