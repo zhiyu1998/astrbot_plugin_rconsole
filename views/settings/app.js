@@ -238,9 +238,28 @@ function paintPlatforms() {
   renderPlatformChips($("#statusPlatformList"));
 }
 
+// 「禁用的解析平台」列表和平台开关是同一份数据的两种呈现，点完开关顺手同步
+function syncDisabledPlatformsField(disabled) {
+  if (!Array.isArray(disabled)) return;
+  const field = allFields().find((entry) => entry.key === "DISABLED_PLATFORMS");
+  if (field) field.value = disabled;
+  const area = document.querySelector('.field[data-key="DISABLED_PLATFORMS"] textarea');
+  if (!area) return;
+  area.value = disabled.join(NL);
+  const meta = area.parentElement && area.parentElement.querySelector(".list-meta");
+  if (meta) meta.textContent = `${disabled.length} 项`;
+}
+
 async function togglePlatform(key) {
   const item = state.platforms.find((entry) => entry.key === key);
   if (!item || state.platformBusy.has(key)) return;
+
+  // 「禁用的解析平台」列表正好是这个开关的落盘形式：有未保存的手改就先别动，
+  // 否则一保存就把刚点的开关状态盖掉了
+  if (state.pending.has("DISABLED_PLATFORMS")) {
+    toast("「禁用的解析平台」列表有未保存的修改，先保存或放弃再点平台开关", true);
+    return;
+  }
 
   const previous = item.enabled;
   const next = !previous;
@@ -253,6 +272,9 @@ async function togglePlatform(key) {
     if (result && Array.isArray(result.platforms) && result.platforms.length) {
       state.platforms = result.platforms;
     }
+    // 「禁用的解析平台」那个列表控件显示的就是这份数据，顺手同步，
+    // 不然面板上还留着点击前的旧值
+    syncDisabledPlatformsField(result && result.disabled);
     toast(`已${next ? "开启" : "关闭"}「${item.label}」解析`);
     // 状态页的统计数字跟着变，不然刚关掉一个平台还显示「已启用 3 / 3」
     const on = state.platforms.filter((entry) => entry.enabled).length;
