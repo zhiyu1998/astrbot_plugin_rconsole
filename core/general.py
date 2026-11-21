@@ -30,6 +30,7 @@ from .common import (
     delete_file,
     download_file,
     download_images,
+    effective_video_limit_mb,
     fetch_json,
     fetch_text,
     get_message_text,
@@ -353,5 +354,7 @@ async def process_general_url(
         if components:
             yield event.chain_result(components)
         else:
-            yield event.plain_result(f"{platform} 视频超过 {video_size_limit_mb}MB 发送上限")
+            yield event.plain_result(
+                f"{platform} 视频超过 {effective_video_limit_mb(event, video_size_limit_mb)}MB 发送上限"
+            )
         release_video(path)

@@ -18,14 +18,15 @@ from .common import (
     cache_dir,
     create_forward_message,
     delete_boring_characters,
-    local_image,
-    single_result,
-    truncate_str,
+    effective_video_limit_mb,
     image_send_results,
+    local_image,
     release_file,
     release_video,
     remove_files,
     send_forward_message,
+    single_result,
+    truncate_str,
     video_components,
 )
 
@@ -638,7 +639,9 @@ async def process_xiaohongshu_url(
         if components:
             yield event.chain_result(components)
         else:
-            yield event.plain_result(f"视频超过 {video_size_limit_mb}MB 发送上限，已跳过发送")
+            yield event.plain_result(
+                f"视频超过 {effective_video_limit_mb(event, video_size_limit_mb)}MB 发送上限，已跳过发送"
+            )
         release_video(video_path)
         return
 

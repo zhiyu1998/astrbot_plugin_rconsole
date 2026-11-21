@@ -18,6 +18,7 @@ from .common import (
     cover_text_result,
     delete_file,
     download_file,
+    effective_video_limit_mb,
     fetch_json,
     get_message_text,
     release_video,
@@ -103,5 +104,7 @@ async def process_weishi_url(
     if components:
         yield event.chain_result(components)
     else:
-        yield event.plain_result(f"微视视频超过 {video_size_limit_mb}MB 发送上限")
+        yield event.plain_result(
+            f"微视视频超过 {effective_video_limit_mb(event, video_size_limit_mb)}MB 发送上限"
+        )
     release_video(path)

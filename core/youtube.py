@@ -22,6 +22,7 @@ from astrbot.api import logger
 
 from .common import (
     cache_dir,
+    effective_video_limit_mb,
     limit_notice_precise,
     local_image,
     release_video,
@@ -427,6 +428,6 @@ async def process_youtube_url(
         yield event.chain_result(components)
     else:
         yield event.plain_result(
-            f"视频已下载但无法发送：可能超过大小上限 {video_size_limit_mb}MB。"
+            f"视频已下载但无法发送：可能超过大小上限 {effective_video_limit_mb(event, video_size_limit_mb)}MB。"
         )
     release_video(path)

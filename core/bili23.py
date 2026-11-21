@@ -23,6 +23,7 @@ from .common import (
     delete_boring_characters,
     delete_file,
     download_stream_segment,
+    effective_video_limit_mb,
     fetch_json,
     limit_notice,
     local_image,
@@ -540,7 +541,9 @@ async def _process_bili_live(
         release_video(path)
     else:
         delete_file(path)
-        yield event.plain_result(f"直播片段已录好但超过 {video_size_limit_mb}MB 发送上限，已跳过")
+        yield event.plain_result(
+            f"直播片段已录好但超过 {effective_video_limit_mb(event, video_size_limit_mb)}MB 发送上限，已跳过"
+        )
 
 
 # ---------------------------------------------------------------- 目标提取
@@ -935,7 +938,7 @@ async def process_bilibili_url(
         yield event.chain_result(components)
     else:
         yield event.plain_result(
-            f"视频已下载但无法发送：可能超过大小上限 {video_size_limit_mb}MB，或读取失败。"
+            f"视频已下载但无法发送：可能超过大小上限 {effective_video_limit_mb(event, video_size_limit_mb)}MB，或读取失败。"
         )
     release_video(merged)
 

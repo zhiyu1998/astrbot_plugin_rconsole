@@ -48,6 +48,7 @@ from .common import (
     download_file,
     download_images,
     download_stream_segment,
+    effective_video_limit_mb,
     fetch_json,
     fetch_text,
     get_message_text,
@@ -904,7 +905,9 @@ async def _process_douyin_live(
         release_video(path)
     else:
         delete_file(path)
-        yield event.plain_result(f"直播片段已录好但超过 {video_size_limit_mb}MB 发送上限，已跳过")
+        yield event.plain_result(
+            f"直播片段已录好但超过 {effective_video_limit_mb(event, video_size_limit_mb)}MB 发送上限，已跳过"
+        )
 
 
 def _describe(item: Dict[str, Any]) -> Tuple[str, str]:
@@ -1073,5 +1076,7 @@ async def process_douyin_url(
     if components:
         yield event.chain_result(components)
     else:
-        yield event.plain_result(f"视频已下载但超过 {video_size_limit_mb}MB 发送上限，已跳过")
+        yield event.plain_result(
+            f"视频已下载但超过 {effective_video_limit_mb(event, video_size_limit_mb)}MB 发送上限，已跳过"
+        )
     release_video(path)

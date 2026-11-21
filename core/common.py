@@ -910,6 +910,43 @@ _VIDEO_URL_PLATFORMS = ("aiocqhttp", "napcat", "onebot")
 # 文件 token 有效期（秒）：NapCat 可能多次 Range 拉取，用 single_use=False + 较长 TTL
 _VIDEO_URL_TOKEN_TTL = 900.0
 
+# ---------------------------------------------------------------- QQ 官方机器人限制
+# 这些数字来自 AstrBot 的 qqofficial 适配器与平台文档，不是插件自己拍的：
+#   * 视频卡片 file_type=2 软限 30MB，超了官方会降级成文件
+#   * 文件 file_type=4 硬限 200MB，超了报 850031
+#   * 适配器只在 >QQOFFICIAL_CHUNKED_UPLOAD_THRESHOLD(10MB) 才走 upload_id 分片，
+#     否则把整个文件 base64 塞进 file_data，而平台 file_data 上限只有 5MB
+_QQ_OFFICIAL_PLATFORMS = ("qq_official", "qq_official_webhook")
+_QQ_OFFICIAL_VIDEO_CARD_MB = 30
+_QQ_OFFICIAL_FILE_HARD_MB = 200
+_QQ_OFFICIAL_CHUNK_MIN_MB = 10
+_QQ_OFFICIAL_BASE64_MAX_MB = 5
+
+
+def qq_official_limits():
+    """返回 qq_official 的四条界限（MB），供日志/自检使用。"""
+    return {
+        "video_card": _QQ_OFFICIAL_VIDEO_CARD_MB,
+        "file_hard": _QQ_OFFICIAL_FILE_HARD_MB,
+        "chunk_min": _QQ_OFFICIAL_CHUNK_MIN_MB,
+        "base64_max": _QQ_OFFICIAL_BASE64_MAX_MB,
+    }
+
+
+def effective_video_limit_mb(event: Any, max_mb: int = 0) -> int:
+    """
+    某个平台本次「真正生效」的体积上限（MB）。
+
+    调用方的提示文案如果直接印配置值，在 qq_official 上会和实际判断矛盾
+    （配置 9999 但文件硬限 200）。构造文案时用这个函数取数。
+    """
+    configured = int(max_mb or 0)
+    if configured <= 0:
+        configured = 30
+    if _platform_of(event) in _QQ_OFFICIAL_PLATFORMS:
+        return min(configured, _QQ_OFFICIAL_FILE_HARD_MB)
+    return configured
+
 
 def set_file_service(enabled: bool) -> None:
     global _USE_FILE_SERVICE
@@ -951,8 +988,10 @@ async def video_components(
     本地视频转成发送组件（按平台选择最优发送方式，能不 base64 就不 base64）。
 
     策略优先级：
-    1. qq_official（QQ 官方机器人）：官方适配器不支持 base64://，且 >5MB 必须走 URL/分片。
-       这里强制走本地文件路径（file:// → 适配器自行上传，>10MB 自动分片），并按官方 30MB 上限钳制。
+    1. qq_official（QQ 官方机器人）：官方适配器不支持 base64://，只能用本地文件路径。
+       ≤30MB 发视频卡片（file_type=2）；>30MB 降级成文件卡片（file_type=4，硬限 200MB）；
+       实际生效上限 = min(max_mb, 200MB)；5~10MB 是适配器死区（它只在 >10MB 才分片，
+       否则整段 base64 超过平台 file_data 上限），直接跳过并记日志说明原因。
     2. OneBot/NapCat（_VIDEO_URL_BASE 已配置且平台命中）：注册到 AstrBot 文件服务，发 URL 直发，
        协议端自己下载，彻底避免 base64。
     3. 配了全局 callback_api_base：用 file:// 交给 AstrBot 文件服务转 URL。
@@ -965,19 +1004,48 @@ async def video_components(
 
     size_mb = os.path.getsize(path) / 1024 / 1024
     platform = _platform_of(event)
-    is_official = ("qq_official" in platform) or ("official" in platform)
+    is_official = platform in _QQ_OFFICIAL_PLATFORMS
 
-    if max_mb and max_mb > 0 and size_mb > max_mb:
-        logger.warning(f"[R插件] 视频 {path} 体积 {size_mb:.1f}MB 超过上限 {max_mb}MB，跳过发送")
+    # 配置上限；qq_official 还要受平台文件硬限约束（配置不能突破硬限）
+    limit_mb = int(max_mb or 0)
+    if limit_mb <= 0:
+        limit_mb = 30
+    if is_official:
+        limit_mb = min(limit_mb, _QQ_OFFICIAL_FILE_HARD_MB)
+
+    if size_mb > limit_mb:
+        if is_official and int(max_mb or 0) > _QQ_OFFICIAL_FILE_HARD_MB:
+            logger.warning(
+                f"[R插件][qq_official] 视频 {size_mb:.1f}MB 超过文件卡片硬限 "
+                f"{_QQ_OFFICIAL_FILE_HARD_MB}MB（配置 {max_mb}MB 无法突破平台限制），跳过发送"
+            )
+        else:
+            logger.warning(
+                f"[R插件] 视频 {path} 体积 {size_mb:.1f}MB 超过上限 {limit_mb}MB，跳过发送"
+            )
         return []
 
-    # 1) QQ 官方机器人：绝不 base64，走本地文件路径交给适配器上传（>30MB 官方会降级/报错，直接跳过改发文字）
+    # 1) QQ 官方机器人：绝不 base64，走本地文件路径交给适配器上传
     if is_official:
-        if size_mb > 30:
-            logger.warning(
-                f"[R插件][qq_official] 视频 {size_mb:.1f}MB 超过官方 30MB 发送上限，跳过发送（改发文字）"
+        # 适配器只在 >10MB 才分片；≤5MB 直接 base64 也合规。5~10MB 两头都不占，必失败
+        if _QQ_OFFICIAL_BASE64_MAX_MB < size_mb <= _QQ_OFFICIAL_CHUNK_MIN_MB:
+            reason = (
+                f"该视频 {size_mb:.1f}MB 处于官方机器人 "
+                f"{_QQ_OFFICIAL_BASE64_MAX_MB}~{_QQ_OFFICIAL_CHUNK_MIN_MB}MB 不可发送区间："
+                f"AstrBot 适配器仅在超过 {_QQ_OFFICIAL_CHUNK_MIN_MB}MB 时才分片上传，"
+                f"而平台 file_data 上限为 {_QQ_OFFICIAL_BASE64_MAX_MB}MB。已跳过。"
             )
-            return []
+            logger.warning(f"[R插件][qq_official] {reason}")
+            # 返回文字组件：调用方没法表达这种「非上限」原因，硬套 "超过 X MB" 会误导
+            return [Comp.Plain(reason)]
+        # 视频卡片软限 30MB，超了降级成文件卡片（file_type=4），用户可下载观看
+        if size_mb > _QQ_OFFICIAL_VIDEO_CARD_MB:
+            file_name = (name or os.path.basename(path) or "video.mp4").strip()
+            logger.info(
+                f"[R插件][qq_official] 视频 {size_mb:.1f}MB 超过视频卡片软限 "
+                f"{_QQ_OFFICIAL_VIDEO_CARD_MB}MB，改用文件卡片发送：{file_name}"
+            )
+            return [Comp.File(name=file_name, file=os.path.abspath(path))]
         return [Comp.Video.fromFileSystem(path)]
 
     # 2) OneBot/NapCat：URL 直发（需要协议端能访问到 _VIDEO_URL_BASE）

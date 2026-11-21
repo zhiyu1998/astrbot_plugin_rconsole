@@ -23,6 +23,7 @@ from .common import (
     delete_file,
     download_file,
     download_images,
+    effective_video_limit_mb,
     fetch_json,
     get_message_text,
     image_send_results,
@@ -163,7 +164,9 @@ async def process_miyoushe_url(
             if components:
                 yield event.chain_result(components)
             else:
-                yield event.plain_result(f"米游社视频超过 {video_size_limit_mb}MB 发送上限")
+                yield event.plain_result(
+                    f"米游社视频超过 {effective_video_limit_mb(event, video_size_limit_mb)}MB 发送上限"
+                )
             release_video(path)
         else:
             yield event.plain_result("米游社视频下载失败")

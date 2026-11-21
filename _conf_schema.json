@@ -17,7 +17,7 @@
     "description": "【全局】视频体积上限（MB）",
     "type": "int",
     "default": 30,
-    "hint": "默认 30（填 0 也按 30 算）。超过上限只发文字和原链接。没配 callback_api_base 时视频走 base64，建议别超过 50"
+    "hint": "默认 30（填 0 也按 30 算）。超过上限只发文字和原链接。qq_official 另受平台限制：≤30MB 发视频卡片，>30MB 自动降级成文件卡片（可下载），硬限 200MB（填再大也无效）；5~10MB 因适配器分片阈值会跳过并说明原因。没配 callback_api_base 时其它平台视频走 base64，建议别超过 50"
   },
   "VIDEO_URL_BASE": {
     "description": "【全局】视频直发文件服务地址（可选）",

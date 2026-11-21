@@ -19,6 +19,7 @@ from .common import (
     build_temp_path,
     concat_ts,
     delete_file,
+    effective_video_limit_mb,
     ensure_dir,
     fetch_text,
     get_message_text,
@@ -207,7 +208,9 @@ async def process_acfun_url(
         if components:
             yield event.chain_result(components)
         else:
-            yield event.plain_result(f"AcFun 视频已合并但超过 {video_size_limit_mb}MB 发送上限")
+            yield event.plain_result(
+                f"AcFun 视频已合并但超过 {effective_video_limit_mb(event, video_size_limit_mb)}MB 发送上限"
+            )
         release_video(merged)
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)

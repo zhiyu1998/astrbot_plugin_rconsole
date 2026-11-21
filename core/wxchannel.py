@@ -27,6 +27,7 @@ from astrbot.api import logger
 from .common import (
     build_temp_path,
     download_file,
+    effective_video_limit_mb,
     local_image,
     release_video,
     video_components,
@@ -319,5 +320,7 @@ async def process_wxchannel_url(
     if components:
         yield event.chain_result(components)
     else:
-        yield event.plain_result(f"视频已下载但无法发送：可能超过大小上限 {video_size_limit_mb}MB")
+        yield event.plain_result(
+            f"视频已下载但无法发送：可能超过大小上限 {effective_video_limit_mb(event, video_size_limit_mb)}MB"
+        )
     release_video(path)
