@@ -9,3 +9,21 @@ dependencies = [
     "bilibili-api-python>=17.2.1",
     "never-jscore>=2.5.2"
 ]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+# 运行态 / 草稿 / 前端资源不参与检查
+extend-exclude = ["scratch", "data", ".venv", "views"]
+
+[tool.ruff.lint]
+# 保守起步：只抓语法错误、未定义名、未使用导入等确定性缺陷
+select = ["E4", "E7", "E9", "F"]
+# 行宽交给 formatter，不在 lint 阶段报
+ignore = ["E501"]
+
+[tool.ruff.format]
+# 仓库规范是 LF；写成 lf 才能保证格式化后不会重新引入 CRLF
+line-ending = "lf"
+quote-style = "double"
+indent-style = "space"
