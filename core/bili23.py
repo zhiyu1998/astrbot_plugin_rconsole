@@ -28,6 +28,7 @@ from .common import (
     local_image,
     release_video,
     remove_files,
+    strip_route_links,
     truncate_str,
     video_components,
 )
@@ -500,7 +501,7 @@ async def _process_bili_live(
     else:
         delete_file(path)
         yield event.plain_result(
-            f"直播片段已录好但超过 {video_size_limit_mb}MB 发送上限，已跳过\n原链接：{url}"
+            f"直播片段已录好但超过 {video_size_limit_mb}MB 发送上限，已跳过"
         )
 
 
@@ -512,7 +513,7 @@ _BILI_SHORT_URL_RE = re.compile(
 _BILI_LONG_URL_RE = re.compile(
     r"(?:https?://)?(?:[A-Za-z0-9-]+\.)*bilibili\.com(?:/[A-Za-z0-9._?%&+\-=/@~#]*)?"
 )
-_BV_ID_RE = re.compile(r"BV[1-9a-zA-Z]{10}", re.IGNORECASE)
+_BV_ID_RE = re.compile(r"(?<![0-9A-Za-z])[Bb][Vv]1[0-9A-Za-z]{9}(?![0-9A-Za-z])")
 
 
 def _pick_bili_target(text: str) -> str:
@@ -566,7 +567,8 @@ async def process_bilibili_url(
     b_short_rex = r"(https?://(?:b23\.tv|bili2233\.cn)/[A-Za-z\d._?%&+\-=\/#]+)"
     # BV处理
     if _BV_ID_RE.fullmatch(url):
-        url = 'https://www.bilibili.com/video/' + url
+        # 前缀统一成大写：BVID 主体区分大小写，不能整体 upper()
+        url = "https://www.bilibili.com/video/BV" + url[2:]
     # 短链没带协议头时补一个，否则 httpx 直接抛 UnsupportedProtocol
     if ("b23.tv" in url or "bili2233.cn" in url) and not url.lower().startswith(("http://", "https://")):
         url = "https://" + url.lstrip("/")
@@ -715,15 +717,28 @@ async def process_bilibili_url(
     video_id = video_id_match.group(1)
 
     v = video.Video(video_id, credential=credential)
-    video_info = await v.get_info()
-
-    if video_info is None:
-        yield event.plain_result(f"识别：B站，出错，无法获取数据！")
+    try:
+        video_info = await v.get_info()
+    except Exception as exc:  # noqa: BLE001
+        # 路由误命中（伪 BV 号）时接口会直接抛，别让异常冒到消息管线
+        logger.warning(f"[R插件][B站] 获取视频信息失败: {exc}")
+        yield event.plain_result("未识别到有效的 B 站视频（链接可能失效或不是视频）")
         return
 
-    video_title, video_cover, video_desc, video_duration = video_info['title'], video_info['pic'], video_info[
-        'desc'], \
-        video_info['duration']
+    if video_info is None:
+        yield event.plain_result("识别：B站，出错，无法获取数据！")
+        return
+
+    try:
+        video_title, video_cover, video_desc, video_duration = (
+            video_info["title"],
+            video_info["pic"],
+            video_info["desc"],
+            video_info["duration"],
+        )
+    except (KeyError, TypeError):
+        yield event.plain_result("未识别到有效的 B 站视频（链接可能失效或不是视频）")
+        return
     # 校准 分p 的情况
     page_num = 0
     if 'pages' in video_info:
@@ -836,7 +851,7 @@ async def process_bilibili_url(
                 await download_b_file(video_url, merged, logger.debug)
         except Exception as exc:  # noqa: BLE001
             logger.error(f"[R插件][B站] 下载或合并失败: {exc}")
-            yield event.plain_result(f"B站视频下载失败：{exc}\n原视频：https://www.bilibili.com/video/{video_id}")
+            yield event.plain_result(strip_route_links(f"B站视频下载失败：{exc}"))
             return
         finally:
             remove_files([tmp_video, tmp_audio])
@@ -849,8 +864,7 @@ async def process_bilibili_url(
         yield event.chain_result(components)
     else:
         yield event.plain_result(
-            f"视频已下载但无法发送：可能超过大小上限 {video_size_limit_mb}MB，或读取失败。\n"
-            f"原视频：https://www.bilibili.com/video/{video_id}"
+            f"视频已下载但无法发送：可能超过大小上限 {video_size_limit_mb}MB，或读取失败。"
         )
     release_video(merged)
 

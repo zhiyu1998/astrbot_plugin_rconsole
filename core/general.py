@@ -312,16 +312,16 @@ async def process_general_url(
         # 第三方接口经常返回已经过期的直链，先探一下再下载，省得白白等超时
         if not await probe_media_url(video_url, headers=headers):
             yield event.plain_result(
-                f"{platform} 视频直链已失效（多半是第三方接口返回的缓存地址过期）。\n原链接：{link}"
+                f"{platform} 视频直链已失效（多半是第三方接口返回的缓存地址过期）。"
             )
             return
         path = await download_file(video_url, build_temp_path(platform, ".mp4"), headers=headers, timeout=240)
         if not path:
-            yield event.plain_result(f"{platform} 视频下载失败\n原链接：{link}")
+            yield event.plain_result(f"{platform} 视频下载失败")
             return
         components = video_components(path, f"{platform}.mp4", video_size_limit_mb)
         if components:
             yield event.chain_result(components)
         else:
-            yield event.plain_result(f"{platform} 视频超过 {video_size_limit_mb}MB 发送上限\n原链接：{link}")
+            yield event.plain_result(f"{platform} 视频超过 {video_size_limit_mb}MB 发送上限")
         release_video(path)

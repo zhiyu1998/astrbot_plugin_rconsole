@@ -25,6 +25,7 @@ from .common import (
     limit_notice_precise,
     local_image,
     release_video,
+    strip_route_links,
     video_components,
 )
 
@@ -415,7 +416,7 @@ async def process_youtube_url(
         logger.error(f"[R插件][YouTube] 下载失败: {exc}")
         advice = diagnose_error(exc, proxy)
         yield event.plain_result(
-            f"YouTube 视频下载失败：{advice or str(exc)[:200]}\n原视频：{url}"
+            strip_route_links(f"YouTube 视频下载失败：{advice or str(exc)[:200]}")
         )
         return
 
@@ -425,6 +426,6 @@ async def process_youtube_url(
         yield event.chain_result(components)
     else:
         yield event.plain_result(
-            f"视频已下载但无法发送：可能超过大小上限 {video_size_limit_mb}MB。\n原视频：{url}"
+            f"视频已下载但无法发送：可能超过大小上限 {video_size_limit_mb}MB。"
         )
     release_video(path)

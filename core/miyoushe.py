@@ -159,7 +159,7 @@ async def process_miyoushe_url(
             if components:
                 yield event.chain_result(components)
             else:
-                yield event.plain_result(f"米游社视频超过 {video_size_limit_mb}MB 发送上限\n原链接：{url}")
+                yield event.plain_result(f"米游社视频超过 {video_size_limit_mb}MB 发送上限")
             release_video(path)
         else:
             yield event.plain_result("米游社视频下载失败")

@@ -313,7 +313,7 @@ async def _handle_bbs(event: AstrMessageEvent, link_id: str, cookie: str, identi
                 yield event.chain_result(components)
             else:
                 yield event.plain_result(
-                    f"小黑盒视频超过 {video_size_limit_mb}MB 发送上限\n原链接：{link.get('video_url')}"
+                    f"小黑盒视频超过 {video_size_limit_mb}MB 发送上限"
                 )
             release_video(path)
         else:

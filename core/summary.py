@@ -24,7 +24,13 @@ import astrbot.api.message_components as Comp
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 
-from .common import get_message_text, send_forward_message, _httpx_client, proxy_for
+from .common import (
+    _httpx_client,
+    get_message_text,
+    proxy_for,
+    send_forward_message,
+    strip_route_links,
+)
 
 # ---------------------------------------------------------------- 识别规则
 
@@ -387,7 +393,9 @@ async def process_summary_url(
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[R插件][AI总结] 抓取失败 {url}: {exc}")
-        yield event.plain_result(f"{identify_prefix}{name}（AI 总结）失败：{exc}\n{url}")
+        yield event.plain_result(
+            strip_route_links(f"{identify_prefix}{name}（AI 总结）失败：{exc}\n{url}")
+        )
         return
 
     if use_yuanbao and len(content) > YUANBAO_MAX_CHARS:

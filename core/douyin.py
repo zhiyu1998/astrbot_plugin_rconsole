@@ -1061,6 +1061,6 @@ async def process_douyin_url(
         yield event.chain_result(components)
     else:
         yield event.plain_result(
-            f"视频已下载但超过 {video_size_limit_mb}MB 发送上限，已跳过\n原链接：{dou_url}"
+            f"视频已下载但超过 {video_size_limit_mb}MB 发送上限，已跳过"
         )
     release_video(path)

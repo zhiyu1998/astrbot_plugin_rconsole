@@ -82,7 +82,8 @@ _CODEC_ALIAS = {
 # 小程序卡片补丁注入的文本（"[小程序/卡片] ... 链接: xxx"）同理，
 # 所以这里保持「消息里出现就解析」，不做开头锚定。
 BILIBILI_ROUTE_REGEX = (
-    r".*(?:bilibili\.com|b23\.tv|bili2233\.cn|[Bb][Vv][1-9A-Za-z]{10}).*"
+    r".*(?:bilibili\.com|b23\.tv|bili2233\.cn"
+    r"|(?<![0-9A-Za-z])[Bb][Vv]1[0-9A-Za-z]{9}(?![0-9A-Za-z])).*"
 )
 
 
@@ -292,7 +293,10 @@ class RPlugin(Star):
         disabled = {item.lower() for item in self._list_cfg("DISABLED_PLATFORMS", [])}
         if not disabled:
             return True
-        return name.lower() not in disabled and PLATFORM_ALIASES.get(name, "") not in disabled
+        # 别名也要 lower：AcFun / YouTube / AI总结 这类名字含大写字母，
+        # 不收敛的话「面板显示已关闭、运行时照常解析」
+        alias = PLATFORM_ALIASES.get(name, "").strip().lower()
+        return name.lower() not in disabled and alias not in disabled
 
     def _apply_file_service_mode(self, quiet: bool = False) -> None:
         """

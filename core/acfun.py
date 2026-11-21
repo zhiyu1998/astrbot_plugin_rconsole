@@ -202,7 +202,7 @@ async def process_acfun_url(
             yield event.chain_result(components)
         else:
             yield event.plain_result(
-                f"AcFun 视频已合并但超过 {video_size_limit_mb}MB 发送上限\n原链接：{url}"
+                f"AcFun 视频已合并但超过 {video_size_limit_mb}MB 发送上限"
             )
         release_video(merged)
     finally:

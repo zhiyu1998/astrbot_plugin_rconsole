@@ -355,6 +355,20 @@ def delete_boring_characters(sentence: str) -> str:
     return re.sub(r"[^\w\u4e00-\u9fff]+", "", sentence or "")
 
 
+_ROUTE_LINK_RE = re.compile(r"https?://\S+", re.IGNORECASE)
+
+
+def strip_route_links(text: str) -> str:
+    """
+    清掉回复文案里的链接，防止机器人自己的话再被路由命中（AGENTS 2.5 的互刷）
+
+    失败提示原本习惯带一句「原链接：https://...」，同一个群里只要还有第二个解析
+    机器人（或协议端开了 reportSelfMessage），这条提示就会命中它的路由，于是两边
+    互相解析、互相回复。卡片里的链接不受影响：那是 Comp 的 url 字段，不进 message_str。
+    """
+    return _ROUTE_LINK_RE.sub("（链接见原消息）", text or "")
+
+
 def html_to_text(raw: str) -> str:
     """把微博/小黑盒的 HTML 片段压成纯文本"""
     if not raw:
@@ -1001,7 +1015,11 @@ def release_video(path: str, delay: float = 300.0) -> None:
 
 
 def video_result(event: AstrMessageEvent, path: str, name: str, max_mb: int, fallback: str) -> Any:
-    """视频统一发送：能发就发，超上限/读不出来就发文字提示（带原链接）"""
+    """视频统一发送：能发就发，超上限/读不出来就发文字提示
+
+    fallback 文案里别带平台链接：机器人自己的回复会再被路由命中（见 AGENTS 2.5），
+    需要脱敏时先过 strip_route_links()。
+    """
     components = video_components(path, name, max_mb)
     if components:
         return event.chain_result(components)
