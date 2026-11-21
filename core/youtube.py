@@ -401,9 +401,10 @@ async def process_youtube_url(
 
     header = "\n".join(lines)
     if duration and duration > video_duration_maximum:
-        yield event.chain_result(prefix + [
-            Comp.Plain(f"{header}\n{limit_notice_precise(duration, video_duration_maximum)}")
-        ])
+        yield event.chain_result(
+            prefix
+            + [Comp.Plain(f"{header}\n{limit_notice_precise(duration, video_duration_maximum)}")]
+        )
         return
 
     yield event.chain_result(prefix + [Comp.Plain(header)])

@@ -309,9 +309,7 @@ class CDP:
             session=session,
         )
         if res.get("exceptionDetails"):
-            raise YuanbaoError(
-                f"页面 JS 异常：{res['exceptionDetails'].get('text')}"
-            )
+            raise YuanbaoError(f"页面 JS 异常：{res['exceptionDetails'].get('text')}")
         return (res.get("result") or {}).get("value")
 
     async def close(self) -> None:
@@ -383,9 +381,7 @@ def _free_port() -> int:
 
 def _read_cdp_endpoint(port: int) -> str:
     """同步读 /json/version（调用方丢进线程，别阻塞事件循环）"""
-    with urllib.request.urlopen(
-        f"http://127.0.0.1:{port}/json/version", timeout=2
-    ) as resp:
+    with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=2) as resp:
         return resp.read().decode()
 
 
@@ -480,9 +476,7 @@ class YuanbaoSigner:
         cookies = parse_cookie_string(cookie)
         if not cookies:
             raise YuanbaoError("元宝 Cookie 为空")
-        await self._cdp.send(
-            "Network.setCookies", {"cookies": cookies}, session=self._session
-        )
+        await self._cdp.send("Network.setCookies", {"cookies": cookies}, session=self._session)
         await self._cdp.send(
             "Page.navigate",
             {"url": f"{BASE_URL}/chat/{AGENT_ID}"},
@@ -557,8 +551,7 @@ class YuanbaoSigner:
                 sig = await self._poll_signature(CAPTURE_TIMEOUT)
             if sig is None:
                 raise YuanbaoError(
-                    "没能从元宝页面截到签名。常见原因：Cookie 失效、"
-                    "页面改版、或服务器出网被拦"
+                    "没能从元宝页面截到签名。常见原因：Cookie 失效、页面改版、或服务器出网被拦"
                 )
 
             self._sig = sig

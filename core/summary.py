@@ -36,14 +36,47 @@ from .common import (
 
 # 顺序与 Node 版 SUMMARY_CONTENT_ESTIMATOR_PATTERNS 完全一致
 SUMMARY_PATTERNS: List[Tuple[str, re.Pattern]] = [
-    ("微信文章", re.compile("(?:https?://)?mp\\.weixin\\.qq\\.com/[^\\s\"'<>，。；：！？、（）【】》»“”‘’]*")),
-    ("ArXiv论文", re.compile("(?:https?://)?arxiv\\.org/[^\\s\"'<>，。；：！？、（）【】》»“”‘’]*")),
+    (
+        "微信文章",
+        re.compile(
+            "(?:https?://)?mp\\.weixin\\.qq\\.com/[^\\s\"'<>，。；：！？、（）【】》»“”‘’]*"
+        ),
+    ),
+    (
+        "ArXiv论文",
+        re.compile("(?:https?://)?arxiv\\.org/[^\\s\"'<>，。；：！？、（）【】》»“”‘’]*"),
+    ),
     ("少数派", re.compile("(?:https?://)?sspai\\.com/[^\\s\"'<>，。；：！？、（）【】》»“”‘’]*")),
-    ("哔哩哔哩专栏", re.compile("(?:https?://)?www\\.bilibili\\.com/read/[^\\s\"'<>，。；：！？、（）【】》»“”‘’]*")),
-    ("知乎问题", re.compile("(?:https?://)?www\\.zhihu\\.com/question/[^\\s\"'<>，。；：！？、（）【】》»“”‘’]*")),
-    ("ChinaDaily", re.compile("(?:https?://)?(?:www\\.)?chinadaily\\.com\\.cn/a/[^\\s\"'<>，。；：！？、（）【】》»“”‘’]*")),
-    ("Github", re.compile("(?:https?://)?(?:www\\.)?github\\.com/[^\\s\"'<>，。；：！？、（）【】》»“”‘’]*")),
-    ("V2EX", re.compile("(?:https?://)?(?:www\\.)?v2ex\\.com/t/[^\\s\"'<>，。；：！？、（）【】》»“”‘’]*")),
+    (
+        "哔哩哔哩专栏",
+        re.compile(
+            "(?:https?://)?www\\.bilibili\\.com/read/[^\\s\"'<>，。；：！？、（）【】》»“”‘’]*"
+        ),
+    ),
+    (
+        "知乎问题",
+        re.compile(
+            "(?:https?://)?www\\.zhihu\\.com/question/[^\\s\"'<>，。；：！？、（）【】》»“”‘’]*"
+        ),
+    ),
+    (
+        "ChinaDaily",
+        re.compile(
+            "(?:https?://)?(?:www\\.)?chinadaily\\.com\\.cn/a/[^\\s\"'<>，。；：！？、（）【】》»“”‘’]*"
+        ),
+    ),
+    (
+        "Github",
+        re.compile(
+            "(?:https?://)?(?:www\\.)?github\\.com/[^\\s\"'<>，。；：！？、（）【】》»“”‘’]*"
+        ),
+    ),
+    (
+        "V2EX",
+        re.compile(
+            "(?:https?://)?(?:www\\.)?v2ex\\.com/t/[^\\s\"'<>，。；：！？、（）【】》»“”‘’]*"
+        ),
+    ),
     ("网页", re.compile("https?://[^\\s\"'<>，。；：！？、（）【】》»“”‘’]+")),
 ]
 
@@ -52,9 +85,7 @@ SUMMARY_COMMAND = "#总结一下"
 # 唤醒前缀（#、/ 等）会被 AstrBot 先行剥掉，所以这里不能依赖开头的 #
 # 消息可能长成：总结一下 / #总结一下 / ##总结一下 / /#总结一下
 SUMMARY_TRIGGER_RE = re.compile(r"^[#＃/／]{0,4}\s*总结一下")
-SUMMARY_URL_RE = re.compile(
-    r"(?:https?://|www\.)[^\s，。；：！？、（）【】》»“”‘’'\"`]+", re.I
-)
+SUMMARY_URL_RE = re.compile(r"(?:https?://|www\.)[^\s，。；：！？、（）【】》»“”‘’'\"`]+", re.I)
 
 SUMMARY_PROMPT = """# Role: Web Content Summarization Assistant
 
@@ -151,6 +182,7 @@ def detect_summary_target(text: str) -> Optional[Tuple[str, str]]:
 
 
 # ---------------------------------------------------------------- 网页正文
+
 
 def _decode_entities(text: str) -> str:
     replacements = [
@@ -254,6 +286,7 @@ async def fetch_page_text(
 
 # ---------------------------------------------------------------- 文本统计
 
+
 def count_chinese_chars(text: str) -> int:
     return len(re.findall(r"[\u4e00-\u9fa5]", text or ""))
 
@@ -288,7 +321,10 @@ def extract_title(summary: str, fallback: str = "") -> str:
 
 # ---------------------------------------------------------------- provider
 
-async def resolve_provider(context, event: AstrMessageEvent, preferred: str = "") -> Tuple[str, str]:
+
+async def resolve_provider(
+    context, event: AstrMessageEvent, preferred: str = ""
+) -> Tuple[str, str]:
     """
     解析要用的 chat provider → (provider_id, 展示名)。
 
@@ -341,6 +377,7 @@ def _provider_name(provider, fallback: str = "") -> str:
 
 
 # ---------------------------------------------------------------- 主流程
+
 
 async def process_summary_url(
     context,
@@ -411,8 +448,7 @@ async def process_summary_url(
         merged = f"{system}\n\n{prompt}"
         try:
             logger.info(
-                f"[R插件][AI总结] 使用元宝 {yuanbao_model} 总结 {url}"
-                f"（正文 {len(content)} 字符）"
+                f"[R插件][AI总结] 使用元宝 {yuanbao_model} 总结 {url}（正文 {len(content)} 字符）"
             )
             summary = await yuanbao_mod.ask(
                 merged,
@@ -438,12 +474,16 @@ async def process_summary_url(
             )
         except Exception as exc:  # noqa: BLE001
             logger.error(f"[R插件][AI总结] 模型调用失败：{exc}")
-            yield event.plain_result(f"{identify_prefix}{name}（AI 总结）失败：模型调用出错（{exc}）")
+            yield event.plain_result(
+                f"{identify_prefix}{name}（AI 总结）失败：模型调用出错（{exc}）"
+            )
             return
 
         summary = (getattr(resp, "completion_text", "") or "").strip()
     if not summary:
-        yield event.plain_result(f"{identify_prefix}{name}（AI 总结）失败：模型没有返回内容，请稍后重试")
+        yield event.plain_result(
+            f"{identify_prefix}{name}（AI 总结）失败：模型没有返回内容，请稍后重试"
+        )
         return
 
     minutes, words = estimate_reading_time(summary)

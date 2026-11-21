@@ -62,6 +62,7 @@ def cache_dir(name: str) -> str:
     """暂存目录下的子目录（按平台分），不存在会自动创建"""
     return ensure_dir(os.path.join(TEMP_DIR, name))
 
+
 # ---------------------------------------------------------------- 下载并发
 
 # 任务级并发：同时最多几个下载在跑（相当于 R 插件的 queueConcurrency）
@@ -118,7 +119,7 @@ def limit_notice(duration_seconds: float, limit_seconds: float, kind: str = "视
         当前视频时长约：16分钟，
         大于管理员设置的最大时长 8 分钟！
     """
-    current = js_minutes(duration_seconds, 0)          # 原版 B 站用 toFixed(0)
+    current = js_minutes(duration_seconds, 0)  # 原版 B 站用 toFixed(0)
     limit = js_minutes(limit_seconds, 2)
     return (
         f"{DIVIDING_LINE.replace('{}', '限制说明')}"
@@ -178,7 +179,14 @@ def set_proxy(url: str = "", platforms=None) -> str:
     global _PROXY_URL, _PROXY_PLATFORMS
     _PROXY_URL = normalize_proxy_url(url)
     if not _PROXY_URL:
-        for env_key in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy", "HTTP_PROXY", "http_proxy"):
+        for env_key in (
+            "HTTPS_PROXY",
+            "https_proxy",
+            "ALL_PROXY",
+            "all_proxy",
+            "HTTP_PROXY",
+            "http_proxy",
+        ):
             env_value = os.environ.get(env_key, "").strip()
             if env_value:
                 _PROXY_URL = normalize_proxy_url(env_value)
@@ -246,12 +254,18 @@ async def _download_with_aria2(
     ensure_dir(work_dir)
     conns = str(max(1, min(int(connections or 8), 16)))
     args = [
-        binary, url,
-        "-d", work_dir,
-        "-o", os.path.basename(path),
-        "-x", conns,
-        "-s", conns,
-        "-k", "1M",
+        binary,
+        url,
+        "-d",
+        work_dir,
+        "-o",
+        os.path.basename(path),
+        "-x",
+        conns,
+        "-s",
+        conns,
+        "-k",
+        "1M",
         "--allow-overwrite=true",
         "--auto-file-renaming=false",
         "--console-log-level=warn",
@@ -392,7 +406,7 @@ def truncate_str(text: str, limit: int, ellipsis: str = "…") -> str:
 def chunked(items: Sequence[Any], size: int) -> List[List[Any]]:
     if size <= 0:
         return [list(items)]
-    return [list(items[i:i + size]) for i in range(0, len(items), size)]
+    return [list(items[i : i + size]) for i in range(0, len(items), size)]
 
 
 def get_message_text(event: AstrMessageEvent) -> str:
@@ -413,7 +427,9 @@ def get_message_text(event: AstrMessageEvent) -> str:
             continue
         data = getattr(comp, "data", None)
         if data:
-            parts.append(json.dumps(data, ensure_ascii=False) if not isinstance(data, str) else data)
+            parts.append(
+                json.dumps(data, ensure_ascii=False) if not isinstance(data, str) else data
+            )
     return "".join(parts).strip()
 
 
@@ -523,7 +539,11 @@ async def post_json(
 ) -> Optional[Any]:
     """POST JSON 并解析响应（快手 graphql 之类）"""
     try:
-        req_headers = {"Content-Type": "application/json", "User-Agent": "Mozilla/5.0", **(headers or {})}
+        req_headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0",
+            **(headers or {}),
+        }
         async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as client:
             resp = await client.post(url, json=payload, headers=req_headers)
         if resp.status_code >= 400:
@@ -636,7 +656,9 @@ async def download_file(
         # 没有 aria2c 就用自己的 Range 分段
         if seg_threads and seg_threads > 1:
             if total and total >= _DOWNLOAD_SEGMENT_MIN_MB * 1024 * 1024:
-                logger.info(f"[R插件] 分段下载 {seg_threads} 线程，共 {total / 1024 / 1024:.1f}MB: {url[:80]}")
+                logger.info(
+                    f"[R插件] 分段下载 {seg_threads} 线程，共 {total / 1024 / 1024:.1f}MB: {url[:80]}"
+                )
                 if await _download_segmented(url, path, total, req_headers, seg_threads, timeout):
                     return path
                 logger.warning("[R插件] 分段下载失败，回退单连接下载")
@@ -710,7 +732,9 @@ async def download_stream_segment(
         logger.debug(f"[R插件] 直播流读取结束（{total} 字节）: {exc}")
 
     if not os.path.exists(path) or os.path.getsize(path) < min_bytes:
-        logger.warning(f"[R插件] 直播流太短（{os.path.getsize(path) if os.path.exists(path) else 0} 字节），丢弃")
+        logger.warning(
+            f"[R插件] 直播流太短（{os.path.getsize(path) if os.path.exists(path) else 0} 字节），丢弃"
+        )
         delete_file(path)
         return None
     logger.info(f"[R插件] 录到直播流 {total / 1024 / 1024:.1f}MB / {seconds}秒")
@@ -736,7 +760,9 @@ async def download_images(
             url, path, headers=headers, referer=referer, timeout=60, threads=0
         )
 
-    results = await asyncio.gather(*[_one(i, u) for i, u in enumerate(targets)], return_exceptions=True)
+    results = await asyncio.gather(
+        *[_one(i, u) for i, u in enumerate(targets)], return_exceptions=True
+    )
     return [r for r in results if isinstance(r, str)]
 
 
@@ -841,11 +867,13 @@ def create_forward_message(
         if isinstance(item, list):
             nodes.nodes.append(Comp.Node(uin=default_uin, name=default_name, content=item))
         elif isinstance(item, dict) and "content" in item:
-            nodes.nodes.append(Comp.Node(
-                uin=item.get("uin", default_uin),
-                name=item.get("name", default_name),
-                content=item["content"],
-            ))
+            nodes.nodes.append(
+                Comp.Node(
+                    uin=item.get("uin", default_uin),
+                    name=item.get("name", default_name),
+                    content=item["content"],
+                )
+            )
     return nodes
 
 
@@ -916,7 +944,9 @@ def _url_send_enabled(platform: str) -> bool:
     return any(token in plat for token in _VIDEO_URL_PLATFORMS)
 
 
-async def video_components(path: str, name: str = "", max_mb: int = 0, *, event: Any = None) -> List[Any]:
+async def video_components(
+    path: str, name: str = "", max_mb: int = 0, *, event: Any = None
+) -> List[Any]:
     """
     本地视频转成发送组件（按平台选择最优发送方式，能不 base64 就不 base64）。
 
@@ -995,8 +1025,12 @@ async def local_image(
     if not url:
         return None
     path = await download_file(
-        url, build_temp_path(prefix, ".jpg"), headers=headers, referer=referer, timeout=timeout,
-        proxy=proxy
+        url,
+        build_temp_path(prefix, ".jpg"),
+        headers=headers,
+        referer=referer,
+        timeout=timeout,
+        proxy=proxy,
     )
     if not path:
         return None
@@ -1087,7 +1121,9 @@ def release_video(path: str, delay: float = 300.0) -> None:
     delete_file(path)
 
 
-async def video_result(event: AstrMessageEvent, path: str, name: str, max_mb: int, fallback: str) -> Any:
+async def video_result(
+    event: AstrMessageEvent, path: str, name: str, max_mb: int, fallback: str
+) -> Any:
     """视频统一发送：能发就发，超上限/读不出来就发文字提示
 
     fallback 文案里别带平台链接：机器人自己的回复会再被路由命中（见 AGENTS 2.5），

@@ -63,12 +63,14 @@ async def process_weishi_url(
         return
 
     feed_id = id_match.group(1)
-    payload = await fetch_json(WEISHI_VIDEO_INFO.format(feed_id), headers=WEISHI_HEADERS, timeout=20)
+    payload = await fetch_json(
+        WEISHI_VIDEO_INFO.format(feed_id), headers=WEISHI_HEADERS, timeout=20
+    )
     if not isinstance(payload, dict):
         yield event.plain_result("微视解析失败：接口没有返回数据")
         return
 
-    feeds = (((payload.get("data") or {}).get("feeds")) or [])
+    feeds = ((payload.get("data") or {}).get("feeds")) or []
     if not feeds:
         yield event.plain_result("微视解析失败：作品不存在或已删除")
         return

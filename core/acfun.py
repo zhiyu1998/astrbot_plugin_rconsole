@@ -140,7 +140,9 @@ async def download_segments(segments: List[str], work_dir: str, concurrency: int
 
     results = await asyncio.gather(*[_one(i, u) for i, u in enumerate(segments)])
     if not all(results):
-        logger.warning(f"[R插件][AcFun] 部分分片下载失败 {sum(1 for r in results if not r)}/{len(results)}")
+        logger.warning(
+            f"[R插件][AcFun] 部分分片下载失败 {sum(1 for r in results if not r)}/{len(results)}"
+        )
     return paths
 
 
@@ -169,7 +171,9 @@ async def process_acfun_url(
 
     m3u8_urls: List[str] = meta.get("m3u8_urls") or []
     if not m3u8_urls:
-        yield event.plain_result("AcFun 解析失败：没有拿到 m3u8 地址（可能需要大会员或者该视频受限）")
+        yield event.plain_result(
+            "AcFun 解析失败：没有拿到 m3u8 地址（可能需要大会员或者该视频受限）"
+        )
         return
 
     # 和原实现一致，取最后一个（通常是最高画质）
@@ -197,13 +201,13 @@ async def process_acfun_url(
             yield event.plain_result("AcFun 视频合并失败，可能是服务器缺少 ffmpeg")
             return
 
-        components = await video_components(merged, f"{meta.get('title') or 'acfun'}.mp4", video_size_limit_mb, event=event)
+        components = await video_components(
+            merged, f"{meta.get('title') or 'acfun'}.mp4", video_size_limit_mb, event=event
+        )
         if components:
             yield event.chain_result(components)
         else:
-            yield event.plain_result(
-                f"AcFun 视频已合并但超过 {video_size_limit_mb}MB 发送上限"
-            )
+            yield event.plain_result(f"AcFun 视频已合并但超过 {video_size_limit_mb}MB 发送上限")
         release_video(merged)
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)

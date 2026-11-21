@@ -153,7 +153,9 @@ class RPlugin(Star):
 
         # 平台独立时长上限：0 / 未填 → 沿用全局 VIDEO_DURATION_MAXIMUM
         self.bili_duration = int(self._cfg("BILI_DURATION", 0) or 0) or self.video_duration_maximum
-        self.douyin_duration = int(self._cfg("DOUYIN_DURATION", 0) or 0) or self.video_duration_maximum
+        self.douyin_duration = (
+            int(self._cfg("DOUYIN_DURATION", 0) or 0) or self.video_duration_maximum
+        )
 
         # 哔哩哔哩展示开关
         self.bili_display_cover = bool(self._cfg("BILI_DISPLAY_COVER", True))
@@ -163,7 +165,9 @@ class RPlugin(Star):
         self.bili_intro_len_limit = int(self._cfg("BILI_INTRO_LEN_LIMIT", 50) or 0)
 
         # 哔哩哔哩画质 / 编码 / 下载方式
-        self.bili_resolution = str(self._cfg("BILI_RESOLUTION", "自动（最高可用）") or "自动（最高可用）")
+        self.bili_resolution = str(
+            self._cfg("BILI_RESOLUTION", "自动（最高可用）") or "自动（最高可用）"
+        )
         self.video_codec = _CODEC_ALIAS.get(str(self._cfg("VIDEO_CODEC", "自动（推荐）")), "auto")
         self.bili_use_bbdown = bool(self._cfg("BILI_USE_BBDOWN", False))
         self.bbdown_path = str(self._cfg("BBDOWN_PATH", "BBDown") or "BBDown")
@@ -226,10 +230,14 @@ class RPlugin(Star):
         self.proxy_platforms = self._list_cfg("PROXY_PLATFORMS", ["youtube"])
         self.proxy_url = set_proxy(str(self._cfg("PROXY_URL", "") or ""), self.proxy_platforms)
         if self.proxy_url:
-            logger.info(f"[R插件] 代理已启用：{self.proxy_url} → {self.proxy_platforms or '全部平台'}")
+            logger.info(
+                f"[R插件] 代理已启用：{self.proxy_url} → {self.proxy_platforms or '全部平台'}"
+            )
 
         # YouTube
-        self.youtube_duration = int(self._cfg("YOUTUBE_DURATION", 0) or 0) or self.video_duration_maximum
+        self.youtube_duration = (
+            int(self._cfg("YOUTUBE_DURATION", 0) or 0) or self.video_duration_maximum
+        )
         self.youtube_display_cover = bool(self._cfg("YOUTUBE_DISPLAY_COVER", True))
         self.youtube_display_info = bool(self._cfg("YOUTUBE_DISPLAY_INFO", True))
         self.youtube_desc_len_limit = int(self._cfg("YOUTUBE_DESC_LEN_LIMIT", 0) or 0)
@@ -244,7 +252,9 @@ class RPlugin(Star):
         # 网易云（自建 NeteaseCloudMusicApi）：只做链接 / 卡片解析
         self.netease_api_server = str(self._cfg("NETEASE_API_SERVER", "") or "").strip()
         self.netease_cookie = str(self._cfg("NETEASE_COOKIE", "") or "").strip()
-        self.netease_quality = quality_from_setting(str(self._cfg("NETEASE_QUALITY", "极高") or "极高"))
+        self.netease_quality = quality_from_setting(
+            str(self._cfg("NETEASE_QUALITY", "极高") or "极高")
+        )
         self.netease_quality_fallback = bool(self._cfg("NETEASE_QUALITY_FALLBACK", True))
         self.netease_audio_max_mb = int(self._cfg("NETEASE_AUDIO_MAX_MB", 30) or 0)
         # 0 / 负数 → 回到默认 30MB：宁可不发，也别把上百 MB 的母带塞进消息通道
@@ -255,9 +265,10 @@ class RPlugin(Star):
         # ---------------- 腾讯元宝（对话模型）
         self.yuanbao_enabled = bool(self._cfg("YUANBAO_ENABLED", False))
         # Cookie 留空就用视频号那份（同一个元宝登录态）
-        self.yuanbao_cookie = str(
-            self._cfg("YUANBAO_COOKIE", "") or ""
-        ).strip() or str(self._cfg("WXCHANNEL_COOKIE", "") or "").strip()
+        self.yuanbao_cookie = (
+            str(self._cfg("YUANBAO_COOKIE", "") or "").strip()
+            or str(self._cfg("WXCHANNEL_COOKIE", "") or "").strip()
+        )
         self.yuanbao_model = str(self._cfg("YUANBAO_MODEL", "Hy3") or "Hy3")
         self.yuanbao_timeout = int(self._cfg("YUANBAO_TIMEOUT", 90) or 90)
         if self.yuanbao_timeout <= 0:
@@ -281,7 +292,15 @@ class RPlugin(Star):
         self.summary_system_prompt = str(self._cfg("SUMMARY_PROMPT", "") or "")
         self.summary_user_prompt = str(self._cfg("SUMMARY_USER_PROMPT", "") or "")
 
-        return ["基础参数", "平台展示", "下载与代理", "暂存目录", "网易云音乐", "腾讯元宝", "AI 总结"]
+        return [
+            "基础参数",
+            "平台展示",
+            "下载与代理",
+            "暂存目录",
+            "网易云音乐",
+            "腾讯元宝",
+            "AI 总结",
+        ]
 
     # ------------------------------------------------------------ 配置读取
 
@@ -326,7 +345,9 @@ class RPlugin(Star):
         self.file_service_base = base
         set_file_service(bool(base))
         if not quiet:
-            logger.info(f"[R插件] 视频发送模式：{'文件服务 ' + base if base else 'base64（未配置 callback_api_base）'}")
+            logger.info(
+                f"[R插件] 视频发送模式：{'文件服务 ' + base if base else 'base64（未配置 callback_api_base）'}"
+            )
 
     # ------------------------------------------------------------ 生命周期
 

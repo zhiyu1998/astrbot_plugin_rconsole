@@ -78,6 +78,7 @@ def _relax_timeouts(client: Any) -> None:
     except Exception as exc:  # noqa: BLE001
         logger.debug(f"[R插件][Telegram] 放宽超时失败（忽略）：{exc}")
 
+
 _installed = False
 _orig_func = None
 
@@ -145,9 +146,7 @@ async def _fallback_text(client: Any, user_name: Any, body: str) -> None:
         try:
             await client.send_message(chat_id=user_name, text=chunk)
         except Exception as exc:  # noqa: BLE001
-            logger.error(
-                f"[R插件][Telegram] 文本兜底发送失败：{type(exc).__name__}: {exc}"
-            )
+            logger.error(f"[R插件][Telegram] 文本兜底发送失败：{type(exc).__name__}: {exc}")
             return
 
 
@@ -162,9 +161,7 @@ async def _dispatch(cls: Any, client: Any, message: Any, user_name: Any) -> None
 
     # 只有一条链时才值得拆分；带 At/Reply/按钮的消息保持原样，避免破坏语义
     text_idx = {
-        i
-        for i, comp in enumerate(chain)
-        if isinstance(comp, plain_cls) and _text_of(comp).strip()
+        i for i, comp in enumerate(chain) if isinstance(comp, plain_cls) and _text_of(comp).strip()
     }
     if len(chain) < 2 or not text_idx or len(text_idx) == len(chain):
         await _orig_func(cls, client, message, user_name)
@@ -180,9 +177,7 @@ async def _dispatch(cls: Any, client: Any, message: Any, user_name: Any) -> None
     if not await _send_chain(
         cls, client, message.derive(chain=texts), user_name, retries=0, tag="文本"
     ):
-        await _fallback_text(
-            client, user_name, "\n".join(_text_of(c) for c in texts)
-        )
+        await _fallback_text(client, user_name, "\n".join(_text_of(c) for c in texts))
 
     # 2) 媒体逐个发，单个失败不影响后面的
     video_cls = getattr(mc, "Video", None)

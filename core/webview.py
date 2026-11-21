@@ -413,7 +413,9 @@ def register_view_apis(context, plugin, plugin_name: str) -> None:
         if target == "proxy":
             proxy_url = proxy_for("youtube") or ""
             if not proxy_url:
-                return json_response({"target": "proxy", "ok": None, "message": "未配置代理（直连）"})
+                return json_response(
+                    {"target": "proxy", "ok": None, "message": "未配置代理（直连）"}
+                )
             started = time.time()
             result = await check_proxy(proxy_url, timeout=10)
             return json_response(
@@ -421,7 +423,9 @@ def register_view_apis(context, plugin, plugin_name: str) -> None:
                     "target": "proxy",
                     "ok": bool(result.get("ok")),
                     "cost": round(time.time() - started, 1),
-                    "message": "可达 YouTube" if result.get("ok") else (result.get("error") or "连接失败"),
+                    "message": "可达 YouTube"
+                    if result.get("ok")
+                    else (result.get("error") or "连接失败"),
                 }
             )
 

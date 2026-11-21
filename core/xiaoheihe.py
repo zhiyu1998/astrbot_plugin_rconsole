@@ -86,7 +86,9 @@ def clean_html_text(raw: str) -> str:
                 data = json.loads(m.group(1))
                 protocol = data.get("protocol_type")
                 if protocol == "openUser" and data.get("user_id"):
-                    return f"{wrapped} (https://www.xiaoheihe.cn/app/user/profile/{data['user_id']})"
+                    return (
+                        f"{wrapped} (https://www.xiaoheihe.cn/app/user/profile/{data['user_id']})"
+                    )
                 if protocol == "openGameDetail" and data.get("app_id"):
                     game_type = data.get("game_type") or "pc"
                     return f"{wrapped} (https://www.xiaoheihe.cn/app/topic/game/{game_type}/{data['app_id']})"
@@ -100,7 +102,12 @@ def clean_html_text(raw: str) -> str:
         return wrapped
 
     text = re.sub(r'<a[^>]*?href="([^"]*?)"[^>]*?>(.*?)</a>', _anchor, raw, flags=re.S)
-    text = re.sub(r'<span[^>]*?data-emoji="([^"]*?)"[^>]*?>.*?</span>', lambda m: f"[{m.group(1)}]", text, flags=re.S)
+    text = re.sub(
+        r'<span[^>]*?data-emoji="([^"]*?)"[^>]*?>.*?</span>',
+        lambda m: f"[{m.group(1)}]",
+        text,
+        flags=re.S,
+    )
     text = re.sub(r"</p>|</h[1-6]>|</blockquote>|<br\s*/?>", "\n", text)
     text = re.sub(r"<[^>]+>", "", text)
     return html_lib.unescape(text).strip()
@@ -120,25 +127,36 @@ async def _render_game_card(game_id: str, cookie: str) -> List[Any]:
     components: List[Any] = []
     for kind, api in GAME_API_MAP.items():
         payload = await _api_get(api, get_api_params(kind, game_id), cookie)
-        if not isinstance(payload, dict) or payload.get("status") != "ok" or not payload.get("result"):
+        if (
+            not isinstance(payload, dict)
+            or payload.get("status") != "ok"
+            or not payload.get("result")
+        ):
             continue
         data = payload["result"]
         if data.get("image"):
-            img = await local_image(optimize_image_url(data["image"]), referer=XHH_REFERER, prefix="xhh_card")
+            img = await local_image(
+                optimize_image_url(data["image"]), referer=XHH_REFERER, prefix="xhh_card"
+            )
             if img is not None:
                 components.append(img)
 
         lines: List[str] = []
         score_count = (data.get("comment_stats") or {}).get("score_comment") or 0
         if data.get("score"):
-            lines.append(f"🌟 评分: {data['score']}" + (f" ({score_count}人)" if score_count > 0 else ""))
+            lines.append(
+                f"🌟 评分: {data['score']}" + (f" ({score_count}人)" if score_count > 0 else "")
+            )
         else:
             lines.append("🌟 评分: 暂无评分" + (f" ({score_count}人)" if score_count > 0 else ""))
 
         price = data.get("price") or {}
         if price.get("current"):
-            lines.append(f"💰 价格: ¥{price['current']}" + (f" (-{price['discount']}%)" if price.get("discount") else ""))
-        elif (data.get("region_prices") or []):
+            lines.append(
+                f"💰 价格: ¥{price['current']}"
+                + (f" (-{price['discount']}%)" if price.get("discount") else "")
+            )
+        elif data.get("region_prices") or []:
             region = data["region_prices"][0]
             lines.append(
                 f"💰 价格: {region.get('final_amount')}"
@@ -169,7 +187,11 @@ async def _build_post_content(link: Dict[str, Any], cookie: str) -> List[Any]:
         entities = [entities]
 
     html_item = next(
-        (item for item in entities if isinstance(item, dict) and item.get("type") == "html" and item.get("text")),
+        (
+            item
+            for item in entities
+            if isinstance(item, dict) and item.get("type") == "html" and item.get("text")
+        ),
         None,
     )
 
@@ -197,7 +219,9 @@ async def _build_post_content(link: Dict[str, Any], cookie: str) -> List[Any]:
                         logger.warning(f"[R插件][小黑盒] 游戏卡片 {game_match.group(1)} 没取到数据")
                 elif img_match:
                     img = await local_image(
-                        optimize_image_url(img_match.group(1)), referer=XHH_REFERER, prefix="xhh_inline"
+                        optimize_image_url(img_match.group(1)),
+                        referer=XHH_REFERER,
+                        prefix="xhh_inline",
                     )
                     if img is not None:
                         components.append(img)
@@ -223,10 +247,16 @@ async def _build_post_content(link: Dict[str, Any], cookie: str) -> List[Any]:
         return components
 
     # JSON 实体数组：图片和文本分开
-    image_urls = [optimize_image_url(item["url"]) for item in entities
-                  if isinstance(item, dict) and item.get("type") == "img" and item.get("url")]
-    text_content = "\n".join(item["text"] for item in entities
-                             if isinstance(item, dict) and item.get("type") == "text" and item.get("text"))
+    image_urls = [
+        optimize_image_url(item["url"])
+        for item in entities
+        if isinstance(item, dict) and item.get("type") == "img" and item.get("url")
+    ]
+    text_content = "\n".join(
+        item["text"]
+        for item in entities
+        if isinstance(item, dict) and item.get("type") == "text" and item.get("text")
+    )
     for url in image_urls:
         components.append(Comp.Image.fromURL(url))
     if text_content and text_content != link.get("description"):
@@ -247,10 +277,16 @@ def _format_comment_time(value: Any) -> str:
         return ""
 
 
-async def _handle_bbs(event: AstrMessageEvent, link_id: str, cookie: str, identify_prefix: str,
-                      image_batch_threshold: int, video_size_limit_mb: int,
-                      msg_element_limit: int = XHH_MSG_ELEMENT_LIMIT,
-                      comment_limit: int = XHH_COMMENT_LIMIT) -> AsyncGenerator[Any, None]:
+async def _handle_bbs(
+    event: AstrMessageEvent,
+    link_id: str,
+    cookie: str,
+    identify_prefix: str,
+    image_batch_threshold: int,
+    video_size_limit_mb: int,
+    msg_element_limit: int = XHH_MSG_ELEMENT_LIMIT,
+    comment_limit: int = XHH_COMMENT_LIMIT,
+) -> AsyncGenerator[Any, None]:
     payload = await _api_get(XHH_BBS_LINK, get_api_params("bbs", link_id), cookie)
     if not isinstance(payload, dict) or payload.get("status") != "ok" or not payload.get("result"):
         logger.error(f"[R插件][小黑盒] 帖子接口异常: {str(payload)[:200]}")
@@ -265,7 +301,9 @@ async def _handle_bbs(event: AstrMessageEvent, link_id: str, cookie: str, identi
     header_components: List[Any] = []
     cover = link.get("thumb") or link.get("video_thumb")
     if cover:
-        cover_comp = await local_image(optimize_image_url(cover), referer=XHH_REFERER, prefix="xhh_thumb")
+        cover_comp = await local_image(
+            optimize_image_url(cover), referer=XHH_REFERER, prefix="xhh_thumb"
+        )
         if cover_comp is not None:
             header_components.append(cover_comp)
 
@@ -277,9 +315,13 @@ async def _handle_bbs(event: AstrMessageEvent, link_id: str, cookie: str, identi
 
     tags = ""
     if link.get("hashtags"):
-        tags = " ".join(f"#{tag.get('name', '')}" for tag in link["hashtags"][:10] if tag.get("name"))
+        tags = " ".join(
+            f"#{tag.get('name', '')}" for tag in link["hashtags"][:10] if tag.get("name")
+        )
     elif link.get("content_tags"):
-        tags = " ".join(f"#{tag.get('text', '')}" for tag in link["content_tags"][:10] if tag.get("text"))
+        tags = " ".join(
+            f"#{tag.get('text', '')}" for tag in link["content_tags"][:10] if tag.get("text")
+        )
     if tags:
         lines.append(f"🏷️标签：{tags}")
 
@@ -308,13 +350,13 @@ async def _handle_bbs(event: AstrMessageEvent, link_id: str, cookie: str, identi
             timeout=300,
         )
         if path:
-            components = await video_components(path, "xiaoheihe.mp4", video_size_limit_mb, event=event)
+            components = await video_components(
+                path, "xiaoheihe.mp4", video_size_limit_mb, event=event
+            )
             if components:
                 yield event.chain_result(components)
             else:
-                yield event.plain_result(
-                    f"小黑盒视频超过 {video_size_limit_mb}MB 发送上限"
-                )
+                yield event.plain_result(f"小黑盒视频超过 {video_size_limit_mb}MB 发送上限")
             release_video(path)
         else:
             yield event.plain_result("小黑盒视频下载失败")
@@ -348,7 +390,9 @@ async def _handle_bbs(event: AstrMessageEvent, link_id: str, cookie: str, identi
                         )
                         if img_comp is not None:
                             content.append(img_comp)
-                blocks.append({"uin": event.get_sender_id(), "name": comment_user, "content": content})
+                blocks.append(
+                    {"uin": event.get_sender_id(), "name": comment_user, "content": content}
+                )
                 processed += 1
 
         for group in chunked(blocks, msg_element_limit):
@@ -361,9 +405,16 @@ async def _handle_bbs(event: AstrMessageEvent, link_id: str, cookie: str, identi
                     yield event.chain_result(block["content"])
 
 
-async def _handle_game(event: AstrMessageEvent, kind: str, app_id: str, cookie: str, identify_prefix: str,
-                       image_batch_threshold: int, video_size_limit_mb: int,
-                       msg_element_limit: int = XHH_MSG_ELEMENT_LIMIT) -> AsyncGenerator[Any, None]:
+async def _handle_game(
+    event: AstrMessageEvent,
+    kind: str,
+    app_id: str,
+    cookie: str,
+    identify_prefix: str,
+    image_batch_threshold: int,
+    video_size_limit_mb: int,
+    msg_element_limit: int = XHH_MSG_ELEMENT_LIMIT,
+) -> AsyncGenerator[Any, None]:
     payload = await _api_get(GAME_API_MAP[kind], get_api_params(kind, app_id), cookie)
     if not isinstance(payload, dict) or not payload.get("result"):
         logger.error(f"[R插件][小黑盒] 游戏接口异常: {str(payload)[:200]}")
@@ -373,7 +424,9 @@ async def _handle_game(event: AstrMessageEvent, kind: str, app_id: str, cookie: 
     data = payload["result"]
     head: List[Any] = [Comp.Plain(f"{identify_prefix}小黑盒游戏")]
     if data.get("image"):
-        game_img = await local_image(optimize_image_url(data["image"]), referer=XHH_REFERER, prefix="xhh_game")
+        game_img = await local_image(
+            optimize_image_url(data["image"]), referer=XHH_REFERER, prefix="xhh_game"
+        )
         if game_img is not None:
             head.append(game_img)
 
@@ -383,7 +436,9 @@ async def _handle_game(event: AstrMessageEvent, kind: str, app_id: str, cookie: 
     if name or name_en:
         brief.append(f"🕹️ {name}{name_en}")
     if data.get("score"):
-        brief.append(f"🌟 小黑盒评分: {data['score']} ({(data.get('comment_stats') or {}).get('score_comment', 0)}人评价)")
+        brief.append(
+            f"🌟 小黑盒评分: {data['score']} ({(data.get('comment_stats') or {}).get('score_comment', 0)}人评价)"
+        )
     if data.get("game_type") == "pc" and (data.get("price") or {}).get("current"):
         brief.append(f"💰 当前价格: ¥{data['price']['current']}")
     elif data.get("game_type") == "console" and data.get("region_prices"):
@@ -426,7 +481,8 @@ async def _handle_game(event: AstrMessageEvent, kind: str, app_id: str, cookie: 
 
     if data.get("game_award"):
         award_lines = [
-            f"• {award.get('detail_name', '')}" + (f" ({award['desc']})" if award.get("desc") else "")
+            f"• {award.get('detail_name', '')}"
+            + (f" ({award['desc']})" if award.get("desc") else "")
             for award in data["game_award"]
         ]
         if award_lines:
@@ -436,11 +492,15 @@ async def _handle_game(event: AstrMessageEvent, kind: str, app_id: str, cookie: 
     price = data.get("price") or {}
     if data.get("game_type") == "pc" and price:
         if price.get("current") not in (None, price.get("initial")):
-            price_lines.append(f"• 当前价格: ¥{price['current']} (原价: ¥{price.get('initial')}, -{price.get('discount')}%)")
+            price_lines.append(
+                f"• 当前价格: ¥{price['current']} (原价: ¥{price.get('initial')}, -{price.get('discount')}%)"
+            )
         elif price.get("current"):
             price_lines.append(f"• 当前价格: ¥{price['current']}")
         if price.get("lowest_price"):
-            price_lines.append(f"• 史低价格: ¥{price['lowest_price']} (-{price.get('lowest_discount')}%)")
+            price_lines.append(
+                f"• 史低价格: ¥{price['lowest_price']} (-{price.get('lowest_discount')}%)"
+            )
         heybox_price = data.get("heybox_price") or {}
         if heybox_price.get("cost_coin"):
             price_lines.append(f"• 小黑盒商城: {heybox_price['cost_coin'] / 1000} 盒币")
@@ -463,7 +523,9 @@ async def _handle_game(event: AstrMessageEvent, kind: str, app_id: str, cookie: 
 
     community: List[str] = []
     if data.get("score"):
-        community.append(f"• 小黑盒评分: {data['score']} ({(data.get('comment_stats') or {}).get('score_comment', 0)}人评价)")
+        community.append(
+            f"• 小黑盒评分: {data['score']} ({(data.get('comment_stats') or {}).get('score_comment', 0)}人评价)"
+        )
     if (data.get("comment_stats") or {}).get("star_5"):
         try:
             rate = float(data["comment_stats"]["star_5"]) / 100
@@ -476,7 +538,9 @@ async def _handle_game(event: AstrMessageEvent, kind: str, app_id: str, cookie: 
         for dim in radar["dimension_list"]:
             community.append(f"  - {dim.get('dimension_name')}: {dim.get('score')}")
     tag_source = data.get("common_tags") or data.get("hot_tags") or []
-    tags = " ".join(f"#{tag['desc']}" for tag in tag_source if isinstance(tag, dict) and tag.get("desc"))
+    tags = " ".join(
+        f"#{tag['desc']}" for tag in tag_source if isinstance(tag, dict) and tag.get("desc")
+    )
     if tags:
         community.append(f"• 热门标签: {tags}")
     for source_key in ("user_num", "game_data"):
@@ -493,29 +557,40 @@ async def _handle_game(event: AstrMessageEvent, kind: str, app_id: str, cookie: 
             detail_parts.append(f"\n• {item['desc']}: {item['value']}")
 
     if data.get("game_type") == "pc":
-        steam_tag = next((tag for tag in (data.get("common_tags") or []) if tag.get("type") == "steam_aggre"), None)
+        steam_tag = next(
+            (tag for tag in (data.get("common_tags") or []) if tag.get("type") == "steam_aggre"),
+            None,
+        )
         if steam_tag:
             for item in steam_tag.get("detail_list") or []:
                 if item.get("name") == "支持Steam Deck" and item.get("desc"):
-                    detail_parts.append(f"\n--- 🎮 兼容性信息 🎮 ---\n• Steam Deck: {item['desc']}\n")
+                    detail_parts.append(
+                        f"\n--- 🎮 兼容性信息 🎮 ---\n• Steam Deck: {item['desc']}\n"
+                    )
 
     if _menu_value("dlc"):
         detail_parts.append(f"\n--- 🧩 DLCs信息 🧩 ---\n• {_menu_value('dlc')}")
 
     if data.get("about_the_game"):
-        detail_parts.append(f"\n--- 📖 游戏简介 📖 ---\n{truncate_str(data['about_the_game'], 1500)}")
+        detail_parts.append(
+            f"\n--- 📖 游戏简介 📖 ---\n{truncate_str(data['about_the_game'], 1500)}"
+        )
 
     blocks: List[Dict[str, Any]] = []
     if detail_parts:
-        blocks.append({
-            "uin": event.get_sender_id(),
-            "name": event.get_sender_name(),
-            "content": [Comp.Plain("\n".join(detail_parts))],
-        })
+        blocks.append(
+            {
+                "uin": event.get_sender_id(),
+                "name": event.get_sender_name(),
+                "content": [Comp.Plain("\n".join(detail_parts))],
+            }
+        )
 
-    screenshots = [optimize_image_url(item.get("url") or item.get("thumbnail"))
-                   for item in data.get("screenshots") or []
-                   if item.get("type") == "image" and (item.get("url") or item.get("thumbnail"))]
+    screenshots = [
+        optimize_image_url(item.get("url") or item.get("thumbnail"))
+        for item in data.get("screenshots") or []
+        if item.get("type") == "image" and (item.get("url") or item.get("thumbnail"))
+    ]
     if screenshots:
         shot_comps: List[Any] = [Comp.Plain("🖼️ 游戏截图 🖼️")]
         for url in screenshots:
@@ -523,11 +598,13 @@ async def _handle_game(event: AstrMessageEvent, kind: str, app_id: str, cookie: 
             if shot is not None:
                 shot_comps.append(shot)
         if len(shot_comps) > 1:
-            blocks.append({
-                "uin": event.get_sender_id(),
-                "name": event.get_sender_name(),
-                "content": shot_comps,
-            })
+            blocks.append(
+                {
+                    "uin": event.get_sender_id(),
+                    "name": event.get_sender_name(),
+                    "content": shot_comps,
+                }
+            )
 
     for group in chunked(blocks, msg_element_limit):
         node = create_forward_message(group, event.get_sender_name(), event.get_sender_id())
@@ -538,7 +615,14 @@ async def _handle_game(event: AstrMessageEvent, kind: str, app_id: str, cookie: 
             for block in group:
                 yield event.chain_result(block["content"])
 
-    movie = next((item for item in data.get("screenshots") or [] if item.get("type") == "movie" and item.get("url")), None)
+    movie = next(
+        (
+            item
+            for item in data.get("screenshots") or []
+            if item.get("type") == "movie" and item.get("url")
+        ),
+        None,
+    )
     if movie:
         path = await download_file(
             movie["url"],
@@ -547,7 +631,9 @@ async def _handle_game(event: AstrMessageEvent, kind: str, app_id: str, cookie: 
             timeout=300,
         )
         if path:
-            components = await video_components(path, "xiaoheihe_game.mp4", video_size_limit_mb, event=event)
+            components = await video_components(
+                path, "xiaoheihe_game.mp4", video_size_limit_mb, event=event
+            )
             if components:
                 yield event.chain_result(components)
             else:
@@ -579,12 +665,24 @@ async def process_xiaoheihe_url(
 
     if kind == "bbs":
         generator = _handle_bbs(
-            event, ident, cookie, identify_prefix, image_batch_threshold, video_size_limit_mb,
-            msg_element_limit, comment_limit,
+            event,
+            ident,
+            cookie,
+            identify_prefix,
+            image_batch_threshold,
+            video_size_limit_mb,
+            msg_element_limit,
+            comment_limit,
         )
     else:
         generator = _handle_game(
-            event, kind, ident, cookie, identify_prefix, image_batch_threshold, video_size_limit_mb,
+            event,
+            kind,
+            ident,
+            cookie,
+            identify_prefix,
+            image_batch_threshold,
+            video_size_limit_mb,
             msg_element_limit,
         )
 

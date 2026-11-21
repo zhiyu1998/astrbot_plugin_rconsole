@@ -88,11 +88,13 @@ def gen_hkey(path: str, timestamp: int, nonce: str) -> str:
     :param nonce: 大写 MD5 随机串
     """
     norm_path = "/" + "/".join([seg for seg in path.split("/") if seg]) + "/"
-    merged = _interleave([
-        _za(str(timestamp), SALT, -2),
-        _wa(norm_path, SALT),
-        _wa(nonce, SALT),
-    ])[:20]
+    merged = _interleave(
+        [
+            _za(str(timestamp), SALT, -2),
+            _wa(norm_path, SALT),
+            _wa(nonce, SALT),
+        ]
+    )[:20]
     digest = _md5(merged)
 
     tail = [ord(ch) for ch in digest[-6:]]
@@ -133,14 +135,16 @@ def get_api_params(kind: str, ident: str) -> dict:
     }
 
     if kind == "bbs":
-        params.update({
-            "link_id": ident,
-            "limit": 20,
-            "web_version": "2.5",
-            "x_client_type": "web",
-            "x_app": "heybox_website",
-            "x_os_type": "Android",
-        })
+        params.update(
+            {
+                "link_id": ident,
+                "limit": 20,
+                "web_version": "2.5",
+                "x_client_type": "web",
+                "x_app": "heybox_website",
+                "x_os_type": "Android",
+            }
+        )
     elif kind == "pc":
         params["steam_appid"] = ident
     else:

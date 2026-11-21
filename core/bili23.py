@@ -82,8 +82,9 @@ async def download_b_file(url, full_file_name, progress_callback=None, retries=3
     raise RuntimeError(f"B站媒体下载失败: {last_error}")
 
 
-async def merge_file_to_mp4(v_full_file_name: str, a_full_file_name: str, output_file_name: str,
-                            log_output: bool = False):
+async def merge_file_to_mp4(
+    v_full_file_name: str, a_full_file_name: str, output_file_name: str, log_output: bool = False
+):
     """
     合并视频文件和音频文件
     :param v_full_file_name: 视频文件路径
@@ -92,10 +93,12 @@ async def merge_file_to_mp4(v_full_file_name: str, a_full_file_name: str, output
     :param log_output: 是否显示 ffmpeg 输出日志，默认忽略
     :return:
     """
-    logger.info(f'正在合并：{output_file_name}')
+    logger.info(f"正在合并：{output_file_name}")
 
     # 构建 ffmpeg 命令
-    command = f'ffmpeg -y -i "{v_full_file_name}" -i "{a_full_file_name}" -c copy "{output_file_name}"'
+    command = (
+        f'ffmpeg -y -i "{v_full_file_name}" -i "{a_full_file_name}" -c copy "{output_file_name}"'
+    )
     stdout = None if log_output else subprocess.DEVNULL
     stderr = None if log_output else subprocess.DEVNULL
 
@@ -103,28 +106,30 @@ async def merge_file_to_mp4(v_full_file_name: str, a_full_file_name: str, output
         # Windows 下使用 run_in_executor
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(
-            None,
-            lambda: subprocess.call(command, shell=True, stdout=stdout, stderr=stderr)
+            None, lambda: subprocess.call(command, shell=True, stdout=stdout, stderr=stderr)
         )
     else:
         # 其他平台使用 create_subprocess_shell
         process = await asyncio.create_subprocess_shell(
-            command,
-            shell=True,
-            stdout=stdout,
-            stderr=stderr
+            command, shell=True, stdout=stdout, stderr=stderr
         )
         await process.communicate()
 
 
 def extra_bili_info(video_info):
     """
-        格式化视频信息
+    格式化视频信息
     """
-    video_state = video_info['stat']
-    video_like, video_coin, video_favorite, video_share, video_view, video_danmaku, video_reply = video_state['like'], \
-        video_state['coin'], video_state['favorite'], video_state['share'], video_state['view'], video_state['danmaku'], \
-        video_state['reply']
+    video_state = video_info["stat"]
+    video_like, video_coin, video_favorite, video_share, video_view, video_danmaku, video_reply = (
+        video_state["like"],
+        video_state["coin"],
+        video_state["favorite"],
+        video_state["share"],
+        video_state["view"],
+        video_state["danmaku"],
+        video_state["reply"],
+    )
 
     video_data_map = {
         "点赞": video_like,
@@ -133,7 +138,7 @@ def extra_bili_info(video_info):
         "分享": video_share,
         "总播放量": video_view,
         "弹幕数量": video_danmaku,
-        "评论": video_reply
+        "评论": video_reply,
     }
 
     video_info_result = ""
@@ -172,8 +177,17 @@ BILI_RESOLUTION_MAP = {
 }
 # 从高到低，BBDown 的 -q 需要「该画质及以下」的优先级列表
 BILI_RESOLUTION_ORDER = [
-    "8K 超高清", "杜比视界", "HDR 真彩", "4K 超清", "1080P60 高帧率",
-    "1080P+ 高码率", "1080P 高清", "720P60 高帧率", "720P 高清", "480P 清晰", "360P 流畅",
+    "8K 超高清",
+    "杜比视界",
+    "HDR 真彩",
+    "4K 超清",
+    "1080P60 高帧率",
+    "1080P+ 高码率",
+    "1080P 高清",
+    "720P60 高帧率",
+    "720P 高清",
+    "480P 清晰",
+    "360P 流畅",
 ]
 VIDEO_CODEC_PRIORITY = {
     "auto": "hevc,av1,avc",
@@ -196,7 +210,7 @@ BILI_CDN_MAP = {
 def _resolution_priority(label: str) -> str:
     """BBDown -q：从选中画质往下全部列出来，作为优先级"""
     if label in BILI_RESOLUTION_ORDER:
-        return ", ".join(BILI_RESOLUTION_ORDER[BILI_RESOLUTION_ORDER.index(label):])
+        return ", ".join(BILI_RESOLUTION_ORDER[BILI_RESOLUTION_ORDER.index(label) :])
     return ", ".join(BILI_RESOLUTION_ORDER)
 
 
@@ -267,13 +281,20 @@ async def run_bbdown(
 ) -> str:
     """调用 BBDown 下载，返回生成的 mp4 路径"""
     args = [
-        bbdown_bin, url,
-        "-e", VIDEO_CODEC_PRIORITY.get(video_codec, "hevc,av1,avc"),
-        "-q", _resolution_priority(resolution),
-        "--work-dir", work_dir,
-        "-p", str(max(1, page_num)),
-        "-F", bvid,
-        "--skip-subtitle", "--skip-cover",
+        bbdown_bin,
+        url,
+        "-e",
+        VIDEO_CODEC_PRIORITY.get(video_codec, "hevc,av1,avc"),
+        "-q",
+        _resolution_priority(resolution),
+        "--work-dir",
+        work_dir,
+        "-p",
+        str(max(1, page_num)),
+        "-F",
+        bvid,
+        "--skip-subtitle",
+        "--skip-cover",
     ]
     if sessdata:
         args += ["-c", f"SESSDATA={sessdata}"]
@@ -344,10 +365,14 @@ async def _fetch_bili_live_info(room_id: str, cookie: str = "") -> dict:
 
     先走官方 room/v1/Room/get_info（快、字段全），挂了再退回 bilibili_api。
     """
-    data = await fetch_json(BILI_LIVE_INFO.format(room_id), headers=_bili_live_headers(cookie), timeout=15)
+    data = await fetch_json(
+        BILI_LIVE_INFO.format(room_id), headers=_bili_live_headers(cookie), timeout=15
+    )
     if isinstance(data, dict) and data.get("code") == 0 and isinstance(data.get("data"), dict):
         return data["data"]
-    logger.warning(f"[R插件][B站直播] get_info 接口异常（code={data.get('code') if isinstance(data, dict) else '?'}），改用 bilibili_api")
+    logger.warning(
+        f"[R插件][B站直播] get_info 接口异常（code={data.get('code') if isinstance(data, dict) else '?'}），改用 bilibili_api"
+    )
     room = live.LiveRoom(room_display_id=int(room_id))
     payload = await room.get_room_info()
     return payload.get("room_info") or {}
@@ -382,7 +407,15 @@ def _bili_live_quality(resolution: str) -> int:
     比视频的 qn 粗得多，所以按档位名归并即可。
     """
     text = str(resolution or "")
-    if not text or "自动" in text or "8K" in text or "杜比" in text or "HDR" in text or "4K" in text or "1080" in text:
+    if (
+        not text
+        or "自动" in text
+        or "8K" in text
+        or "杜比" in text
+        or "HDR" in text
+        or "4K" in text
+        or "1080" in text
+    ):
         return BILI_LIVE_QUALITY_MAX
     if "720" in text:
         return 3
@@ -398,7 +431,12 @@ def _bili_live_text(info: dict, room_id: str, identify_prefix: str) -> str:
     title = truncate_str(str(info.get("title") or "哔哩哔哩直播"), 100)
     lines = [f"{identify_prefix}哔哩哔哩直播，{title}"]
 
-    desc = str(info.get("description") or "").replace("&lt;p&gt;", "").replace("&lt;/p&gt;", "").strip()
+    desc = (
+        str(info.get("description") or "")
+        .replace("&lt;p&gt;", "")
+        .replace("&lt;/p&gt;", "")
+        .strip()
+    )
     if desc:
         lines.append(f"📝 简述：{truncate_str(desc, 120)}")
     tags = str(info.get("tags") or "").strip()
@@ -470,7 +508,9 @@ async def _process_bili_live(
     quality = _bili_live_quality(resolution)
     stream_url = await _fetch_bili_live_stream(room_id, quality, cookie)
     if not stream_url:
-        yield event.plain_result("B站直播没有拿到直播流地址（可能需要登录 Cookie 才能取原画），稍后再试试")
+        yield event.plain_result(
+            "B站直播没有拿到直播流地址（可能需要登录 Cookie 才能取原画），稍后再试试"
+        )
         return
 
     seconds = max(3, min(int(stream_duration or 10), 120))
@@ -500,9 +540,7 @@ async def _process_bili_live(
         release_video(path)
     else:
         delete_file(path)
-        yield event.plain_result(
-            f"直播片段已录好但超过 {video_size_limit_mb}MB 发送上限，已跳过"
-        )
+        yield event.plain_result(f"直播片段已录好但超过 {video_size_limit_mb}MB 发送上限，已跳过")
 
 
 # ---------------------------------------------------------------- 目标提取
@@ -557,7 +595,7 @@ async def process_bilibili_url(
     live_compat: bool = True,
 ):
     """
-        核心代码：处理B站链接
+    核心代码：处理B站链接
     """
     # 1. URL 预处理
     # 当前收到的消息（可能是「链接 + 闲聊」或「[小程序/卡片] ... 链接: xxx」），
@@ -570,7 +608,9 @@ async def process_bilibili_url(
         # 前缀统一成大写：BVID 主体区分大小写，不能整体 upper()
         url = "https://www.bilibili.com/video/BV" + url[2:]
     # 短链没带协议头时补一个，否则 httpx 直接抛 UnsupportedProtocol
-    if ("b23.tv" in url or "bili2233.cn" in url) and not url.lower().startswith(("http://", "https://")):
+    if ("b23.tv" in url or "bili2233.cn" in url) and not url.lower().startswith(
+        ("http://", "https://")
+    ):
         url = "https://" + url.lstrip("/")
     # 处理短号、小程序问题
     if "b23.tv" in url or "bili2233.cn" in url:
@@ -588,11 +628,11 @@ async def process_bilibili_url(
             return
     # 2. 根据 URL 类型分流处理
     # ================== 动态解析 ==================
-    if ('t.bilibili.com' in url or '/opus/' in url) and credential:
+    if ("t.bilibili.com" in url or "/opus/" in url) and credential:
         try:
-            if '?' in url:
-                url = url[:url.index('?')]
-            dynamic_match = re.search(r'[^/]+(?!.*/)', url)
+            if "?" in url:
+                url = url[: url.index("?")]
+            dynamic_match = re.search(r"[^/]+(?!.*/)", url)
             if not dynamic_match:
                 yield event.plain_result("无法识别动态ID。")
                 return
@@ -604,40 +644,62 @@ async def process_bilibili_url(
                 dynamic_info = await opus.get_info()
             except AttributeError:
                 # If get_info() is not available, use a basic dictionary
-                dynamic_info = { }
+                dynamic_info = {}
 
             # 提取内容
             desc = ""
             user_name = "未知UP主"
 
             # 尝试不同的数据结构格式获取内容
-            if 'desc' in dynamic_info and isinstance(dynamic_info['desc'], dict) and 'text' in dynamic_info['desc']:
-                desc = dynamic_info['desc']['text']
-            elif 'item' in dynamic_info and isinstance(dynamic_info['item'], dict) and 'description' in dynamic_info[
-                'item']:
-                desc = dynamic_info['item']['description']
+            if (
+                "desc" in dynamic_info
+                and isinstance(dynamic_info["desc"], dict)
+                and "text" in dynamic_info["desc"]
+            ):
+                desc = dynamic_info["desc"]["text"]
+            elif (
+                "item" in dynamic_info
+                and isinstance(dynamic_info["item"], dict)
+                and "description" in dynamic_info["item"]
+            ):
+                desc = dynamic_info["item"]["description"]
 
-            if 'user' in dynamic_info and isinstance(dynamic_info['user'], dict) and 'name' in dynamic_info['user']:
-                user_name = dynamic_info['user']['name']
-            elif 'card' in dynamic_info and isinstance(dynamic_info['card'], dict) and 'card' in dynamic_info['card']:
-                card = dynamic_info['card']['card']
-                if isinstance(card, dict) and 'user' in card and isinstance(card['user'], dict) and 'name' in card[
-                    'user']:
-                    user_name = card['user']['name']
+            if (
+                "user" in dynamic_info
+                and isinstance(dynamic_info["user"], dict)
+                and "name" in dynamic_info["user"]
+            ):
+                user_name = dynamic_info["user"]["name"]
+            elif (
+                "card" in dynamic_info
+                and isinstance(dynamic_info["card"], dict)
+                and "card" in dynamic_info["card"]
+            ):
+                card = dynamic_info["card"]["card"]
+                if (
+                    isinstance(card, dict)
+                    and "user" in card
+                    and isinstance(card["user"], dict)
+                    and "name" in card["user"]
+                ):
+                    user_name = card["user"]["name"]
 
             # 提取图片
             pics = []
             if isinstance(dynamic_info, dict):
                 # 尝试不同的数据结构格式获取图片
-                if 'pictures' in dynamic_info and isinstance(dynamic_info['pictures'], list):
-                    for p in dynamic_info['pictures']:
-                        if isinstance(p, dict) and 'img_src' in p:
-                            pics.append(p['img_src'])
-                elif 'item' in dynamic_info and isinstance(dynamic_info['item'], dict) and 'pictures' in dynamic_info[
-                    'item']:
-                    for p in dynamic_info['item']['pictures']:
-                        if isinstance(p, dict) and 'img_src' in p:
-                            pics.append(p['img_src'])
+                if "pictures" in dynamic_info and isinstance(dynamic_info["pictures"], list):
+                    for p in dynamic_info["pictures"]:
+                        if isinstance(p, dict) and "img_src" in p:
+                            pics.append(p["img_src"])
+                elif (
+                    "item" in dynamic_info
+                    and isinstance(dynamic_info["item"], dict)
+                    and "pictures" in dynamic_info["item"]
+                ):
+                    for p in dynamic_info["item"]["pictures"]:
+                        if isinstance(p, dict) and "img_src" in p:
+                            pics.append(p["img_src"])
 
             message_chain = [Comp.Plain(f"识别到B站动态 (来自: {user_name}):\n{desc}")]
             if pics:
@@ -651,7 +713,7 @@ async def process_bilibili_url(
             yield event.plain_result(f"B站动态解析失败: {e}")
             return
     # ================== 直播间解析 ==================
-    if 'live.bilibili.com' in url:
+    if "live.bilibili.com" in url:
         sessdata = getattr(credential, "sessdata", "") or ""
         async for result in _process_bili_live(
             event,
@@ -668,9 +730,9 @@ async def process_bilibili_url(
         return
 
     # ================== 专栏解析 ==================
-    if '/read/cv' in url:
+    if "/read/cv" in url:
         try:
-            cv_match = re.search(r'cv(\d+)', url)
+            cv_match = re.search(r"cv(\d+)", url)
             if not cv_match:
                 yield event.plain_result("无法识别专栏ID。")
                 return
@@ -678,7 +740,7 @@ async def process_bilibili_url(
             ar = article.Article(int(read_id), credential=credential)
             # article.get_content() might not be available, using get_info() instead
             content = await ar.get_info()
-            title = content.get('title', '未知标题')
+            title = content.get("title", "未知标题")
 
             yield event.plain_result(f"识别：哔哩哔哩专栏《{title}》")
             return
@@ -687,15 +749,17 @@ async def process_bilibili_url(
             return
 
     # ================== 收藏夹解析 (需要SESSDATA) ==================
-    if 'favlist' in url and credential:
+    if "favlist" in url and credential:
         try:
-            fid_match = re.search(r'fid=(\d+)', url)
+            fid_match = re.search(r"fid=(\d+)", url)
             if not fid_match:
                 yield event.plain_result("无法识别收藏夹ID。")
                 return
             fav_id = fid_match.group(1)
 
-            yield event.plain_result(f"识别到B站收藏夹ID: {fav_id}，但需要实现获取收藏夹内容的功能。")
+            yield event.plain_result(
+                f"识别到B站收藏夹ID: {fav_id}，但需要实现获取收藏夹内容的功能。"
+            )
             return
         except Exception as e:
             yield event.plain_result(f"B站收藏夹解析失败: {e} (可能需要登录凭据)")
@@ -703,7 +767,7 @@ async def process_bilibili_url(
 
     # ================== 视频解析 ==================
     # 确保URL是有效的视频链接
-    if 'video/av' not in url and 'video/BV' not in url:
+    if "video/av" not in url and "video/BV" not in url:
         # 如果前面的逻辑都没匹配上，并且不是视频链接，则放弃
         search_res = re.search(url_reg, url)
         if search_res:
@@ -741,7 +805,7 @@ async def process_bilibili_url(
         return
     # 校准 分p 的情况
     page_num = 0
-    if 'pages' in video_info:
+    if "pages" in video_info:
         # 解析URL
         parsed_url = urlparse(url)
         # 检查是否有查询字符串
@@ -749,14 +813,16 @@ async def process_bilibili_url(
             # 解析查询字符串中的参数
             query_params = parse_qs(parsed_url.query)
             # 获取指定参数的值，如果参数不存在，则返回None
-            page_num = int(query_params.get('p', [1])[0]) - 1
+            page_num = int(query_params.get("p", [1])[0]) - 1
         else:
             page_num = 0
-        if 'duration' in video_info['pages'][page_num]:
-            video_duration = video_info['pages'][page_num].get('duration', video_info.get('duration'))
+        if "duration" in video_info["pages"][page_num]:
+            video_duration = video_info["pages"][page_num].get(
+                "duration", video_info.get("duration")
+            )
         else:
             # 如果索引超出范围，使用 video_info['duration'] 或者其他默认值
-            video_duration = video_info.get('duration', 0)
+            video_duration = video_info.get("duration", 0)
     # 删除特殊字符
     video_title = delete_boring_characters(video_title)
     # 按开关拼装信息：封面 / 统计 / 简介 / 在线人数
@@ -773,14 +839,18 @@ async def process_bilibili_url(
     if display_online:
         try:
             online = await v.get_online()
-            info_lines.append(f'🏄‍♂️ 总共 {online["total"]} 人在观看，{online["count"]} 人在网页端观看')
+            info_lines.append(
+                f"🏄‍♂️ 总共 {online['total']} 人在观看，{online['count']} 人在网页端观看"
+            )
         except Exception as exc:  # noqa: BLE001
             logger.debug(f"[R插件][B站] 在线人数获取失败: {exc}")
 
     # 封面先下到本地：hdslb 有时也挑 Referer，而且一张图挂掉会把整条消息链丢掉（正文也没了）
     prefix_comps = []
     if display_cover:
-        cover_comp = await local_image(video_cover, referer="https://www.bilibili.com/", prefix="bili_cover")
+        cover_comp = await local_image(
+            video_cover, referer="https://www.bilibili.com/", prefix="bili_cover"
+        )
         if cover_comp is not None:
             prefix_comps.append(cover_comp)
 
@@ -788,9 +858,10 @@ async def process_bilibili_url(
     if video_duration <= video_duration_maximum:
         yield event.chain_result(prefix_comps + [Comp.Plain(info_text)])
     else:
-        yield event.chain_result(prefix_comps + [
-            Comp.Plain(f"{info_text}{limit_notice(video_duration, video_duration_maximum)}")
-        ])
+        yield event.chain_result(
+            prefix_comps
+            + [Comp.Plain(f"{info_text}{limit_notice(video_duration, video_duration_maximum)}")]
+        )
         # 超时长不下载：省带宽，也避免把大文件塞进消息通道
         return
 
@@ -871,9 +942,9 @@ async def process_bilibili_url(
     # AI 总结
     if credential:
         try:
-            cid = video_info['pages'][page_num]['cid']
+            cid = video_info["pages"][page_num]["cid"]
             ai_conclusion = await v.get_ai_conclusion(cid=cid)
-            if ai_conclusion and ai_conclusion.get('summary'):
+            if ai_conclusion and ai_conclusion.get("summary"):
                 summary_text = f"【Bilibili AI 总结】\n{ai_conclusion['summary']}"
                 yield event.plain_result(summary_text)
         except Exception as e:

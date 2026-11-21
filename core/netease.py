@@ -577,7 +577,9 @@ class NeteaseClient:
         retries: Optional[int] = None,
     ) -> Any:
         if not self.configured:
-            raise NeteaseError("未配置网易云 API 地址（NETEASE_API_SERVER），请先自建 NeteaseCloudMusicApi")
+            raise NeteaseError(
+                "未配置网易云 API 地址（NETEASE_API_SERVER），请先自建 NeteaseCloudMusicApi"
+            )
 
         url = self._url(path, params)
         headers = self._headers(cookie)
@@ -1317,7 +1319,7 @@ async def process_netease_url(
         event, song.cover, info_text, referer=NETEASE_REFERER, prefix="nc_cover"
     )
 
-    for warning in (source.warnings if source else []):
+    for warning in source.warnings if source else []:
         logger.info(f"[R插件][网易云] {warning}")
 
     # 卡片不需要本地文件：歌曲 id 与音频直链就够。放在下载之前，
@@ -1332,8 +1334,7 @@ async def process_netease_url(
 
     if source is None or not source.url:
         yield event.plain_result(
-            "没有拿到可用音源。常见原因：这首歌无版权 / 需要会员、"
-            "自建 API 没有登录、Cookie 失效。"
+            "没有拿到可用音源。常见原因：这首歌无版权 / 需要会员、自建 API 没有登录、Cookie 失效。"
         )
         return
 

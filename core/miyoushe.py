@@ -107,8 +107,8 @@ async def process_miyoushe_url(
         return
 
     data = payload.get("data") or {}
-    post_wrap = (data.get("post") or {})
-    post = (post_wrap.get("post") or {})
+    post_wrap = data.get("post") or {}
+    post = post_wrap.get("post") or {}
     if not post:
         yield event.plain_result("米游社解析失败：没有拿到帖子内容")
         return
@@ -127,7 +127,9 @@ async def process_miyoushe_url(
     )
 
     if images:
-        local_images = await download_images(images, prefix="miyoushe", referer="https://www.miyoushe.com/", limit=40)
+        local_images = await download_images(
+            images, prefix="miyoushe", referer="https://www.miyoushe.com/", limit=40
+        )
         if local_images:
             components = [Comp.Image.fromFileSystem(p) for p in local_images]
             for result in image_send_results(
@@ -155,7 +157,9 @@ async def process_miyoushe_url(
             timeout=240,
         )
         if path:
-            components = await video_components(path, "miyoushe.mp4", video_size_limit_mb, event=event)
+            components = await video_components(
+                path, "miyoushe.mp4", video_size_limit_mb, event=event
+            )
             if components:
                 yield event.chain_result(components)
             else:

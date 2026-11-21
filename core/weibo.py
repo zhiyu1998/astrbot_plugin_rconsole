@@ -65,7 +65,7 @@ def mid2id(mid: str) -> str:
     size = math.ceil(len(mid) / 7)
     chunks: List[str] = []
     for i in range(size):
-        part = mid[i * 7:(i + 1) * 7][::-1]
+        part = mid[i * 7 : (i + 1) * 7][::-1]
         try:
             encoded = base62_encode(int(part))
         except ValueError:
@@ -87,7 +87,11 @@ def _headers(cookie: str = "") -> Dict[str, str]:
 def extract_weibo_id(url: str) -> str:
     """从各种微博链接里抽出 id（base62）"""
     if "m.weibo.cn" in url:
-        for pattern in (r"detail/([A-Za-z0-9]+)", r"status/([A-Za-z0-9]+)", r"m\.weibo\.cn/([A-Za-z0-9]+)/([A-Za-z0-9]+)"):
+        for pattern in (
+            r"detail/([A-Za-z0-9]+)",
+            r"status/([A-Za-z0-9]+)",
+            r"m\.weibo\.cn/([A-Za-z0-9]+)/([A-Za-z0-9]+)",
+        ):
             match = re.search(pattern, url)
             if match:
                 groups = [g for g in match.groups() if g]
@@ -140,11 +144,11 @@ async def get_weibo_data(weibo_id: str, cookie: str = "") -> Optional[Dict[str, 
     return None
 
 
-async def get_weibo_comments(weibo_id: str, cookie: str = "", max_count: int = 20) -> List[Dict[str, Any]]:
+async def get_weibo_comments(
+    weibo_id: str, cookie: str = "", max_count: int = 20
+) -> List[Dict[str, Any]]:
     headers = {**_headers(cookie), "X-Requested-With": "XMLHttpRequest"}
-    payload = await fetch_json(
-        WEIBO_COMMENTS.format(mid=weibo_id), headers=headers, timeout=12
-    )
+    payload = await fetch_json(WEIBO_COMMENTS.format(mid=weibo_id), headers=headers, timeout=12)
     if not isinstance(payload, dict):
         return []
     rows = ((payload.get("data") or {}).get("data")) or []
@@ -152,13 +156,15 @@ async def get_weibo_comments(weibo_id: str, cookie: str = "", max_count: int = 2
     for row in rows[:max_count]:
         if not isinstance(row, dict):
             continue
-        results.append({
-            "user": (row.get("user") or {}).get("screen_name", ""),
-            "text": html_to_text(row.get("text", "")),
-            "like": row.get("like_count") or 0,
-            "time": row.get("created_at", ""),
-            "source": row.get("source", ""),
-        })
+        results.append(
+            {
+                "user": (row.get("user") or {}).get("screen_name", ""),
+                "text": html_to_text(row.get("text", "")),
+                "like": row.get("like_count") or 0,
+                "time": row.get("created_at", ""),
+                "source": row.get("source", ""),
+            }
+        )
     return results
 
 
@@ -167,7 +173,9 @@ async def get_weibo_vote_images(uid: str, weibo_id: str, cookie: str = "") -> Li
     if not uid:
         return []
     headers = {**_headers(cookie), "Accept": "text/html,application/xhtml+xml,*/*;q=0.8"}
-    html_text = await fetch_text(WEIBO_DESKTOP_PAGE.format(uid=uid, id=weibo_id), headers=headers, timeout=15)
+    html_text = await fetch_text(
+        WEIBO_DESKTOP_PAGE.format(uid=uid, id=weibo_id), headers=headers, timeout=15
+    )
     images: List[str] = []
     if html_text:
         for match in re.findall(r"https?://wx\d\.sinaimg\.cn/[a-z0-9]+/[^\"'\s]+?\.jpg", html_text):
@@ -206,7 +214,9 @@ def _render_text(status: Dict[str, Any], identify_prefix: str) -> str:
     if isinstance(retweeted, dict):
         forward_text = truncate_str(html_to_text(retweeted.get("text", "")), 400)
         if forward_text:
-            parts.append(f"// 转发自 {(retweeted.get('user') or {}).get('screen_name', '')}：{forward_text}")
+            parts.append(
+                f"// 转发自 {(retweeted.get('user') or {}).get('screen_name', '')}：{forward_text}"
+            )
     user = status.get("user") or {}
     if user.get("screen_name"):
         parts.append(f"👤 {user.get('screen_name')}")
@@ -287,7 +297,11 @@ async def process_weibo_url(
             for path in local_images:
                 release_file(path)
     elif not video_url:
-        uid = (status_data.get("user") or {}).get("id") or (status_data.get("user") or {}).get("idstr") or ""
+        uid = (
+            (status_data.get("user") or {}).get("id")
+            or (status_data.get("user") or {}).get("idstr")
+            or ""
+        )
         vote_images = await get_weibo_vote_images(str(uid), weibo_id, cookie)
         if vote_images:
             local_images = await download_images(
@@ -324,13 +338,17 @@ async def process_weibo_url(
             blocks: List[Dict[str, Any]] = []
             for item in comments:
                 content = f"{item['text']}\n{item['like']}👍 · {item['time']}{(' ' + item['source']) if item['source'] else ''}"
-                blocks.append({
-                    "name": item["user"] or "微博用户",
-                    "uin": event.get_sender_id(),
-                    "content": [Comp.Plain(content)],
-                })
+                blocks.append(
+                    {
+                        "name": item["user"] or "微博用户",
+                        "uin": event.get_sender_id(),
+                        "content": [Comp.Plain(content)],
+                    }
+                )
             try:
-                nodes = create_forward_message(blocks, event.get_sender_name(), event.get_sender_id())
+                nodes = create_forward_message(
+                    blocks, event.get_sender_name(), event.get_sender_id()
+                )
                 yield event.chain_result([nodes])
             except Exception as exc:  # noqa: BLE001
                 logger.warning(f"[R插件][微博] 评论转发失败，改为逐条发送: {exc}")

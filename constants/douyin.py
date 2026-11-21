@@ -4,9 +4,9 @@
 
 # 抖音API请求头
 DOUYIN_HEADER = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-    'Accept-Language': 'zh-CN,zh;q=0.9',
-    'referer': 'https://www.douyin.com/'
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept-Language": "zh-CN,zh;q=0.9",
+    "referer": "https://www.douyin.com/",
 }
 
 # 抖音API地址（带 Cookie + a_bogus 时使用）
@@ -82,16 +82,16 @@ DOUYIN_LIVE_STATUS_LIVING = 2
 # URL类型代码字典
 URL_TYPE_CODE_DICT = {
     # 抖音/Douyin
-    2: 'image',
-    4: 'video',
-    68: 'image',
+    2: "image",
+    4: "video",
+    68: "image",
     # TikTok
-    0: 'video',
-    51: 'video',
-    55: 'video',
-    58: 'video',
-    61: 'video',
-    150: 'image'
+    0: "video",
+    51: "video",
+    55: "video",
+    58: "video",
+    61: "video",
+    150: "image",
 }
 
 # 抖音链接匹配（短链 / 完整链接 / 图文 / 精选页 modal_id）

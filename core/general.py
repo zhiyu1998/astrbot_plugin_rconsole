@@ -63,7 +63,10 @@ def detect_platform(msg: str) -> str:
 
 
 def _find_url(msg: str) -> str:
-    match = re.search(r"(?:https?://)?[^\s]*?(?:kuaishou\.com|chenzhongtech\.com|ixigua\.com|pipix\.com|pipigx\.com|xsj\.qq\.com|okjike\.com)[^\s]*", msg)
+    match = re.search(
+        r"(?:https?://)?[^\s]*?(?:kuaishou\.com|chenzhongtech\.com|ixigua\.com|pipix\.com|pipigx\.com|xsj\.qq\.com|okjike\.com)[^\s]*",
+        msg,
+    )
     return match.group(0) if match else ""
 
 
@@ -71,7 +74,12 @@ def _find_url(msg: str) -> str:
 
 
 def _parse_embedded_state(html_text: str) -> Optional[Any]:
-    for marker in ("window.__APOLLO_STATE__", "window.INIT_STATE", "__APOLLO_STATE__", "window.__INITIAL_STATE__"):
+    for marker in (
+        "window.__APOLLO_STATE__",
+        "window.INIT_STATE",
+        "__APOLLO_STATE__",
+        "window.__INITIAL_STATE__",
+    ):
         index = html_text.find(marker)
         if index < 0:
             continue
@@ -148,7 +156,9 @@ async def _kuaishou_native(link: str) -> tuple:
     短链先跟跳转，再逐个模板尝试；最后连原始短链页面本身也试一遍。
     """
     resolved = link
-    if any(key in link for key in ("v.kuaishou.com", "v.m.chenzhongtech.com", "m.chenzhongtech.com")):
+    if any(
+        key in link for key in ("v.kuaishou.com", "v.m.chenzhongtech.com", "m.chenzhongtech.com")
+    ):
         resolved = await resolve_redirect(link, headers=UA_HEADERS)
 
     candidates = [resolved, link]
@@ -157,7 +167,11 @@ async def _kuaishou_native(link: str) -> tuple:
     seen: set = set()
 
     for candidate in candidates:
-        for pattern in (r"short-video/([^/?#]+)", r"/fw/photo/([^/?#]+)", r"/fw/long-video/([^/?#]+)"):
+        for pattern in (
+            r"short-video/([^/?#]+)",
+            r"/fw/photo/([^/?#]+)",
+            r"/fw/long-video/([^/?#]+)",
+        ):
             match = re.search(pattern, candidate)
             if not match:
                 continue
@@ -190,7 +204,9 @@ async def _kuaishou_native(link: str) -> tuple:
 # ---------------------------------------------------------------- 第三方接口
 
 
-async def _third_party_once(link: str, api_list: List[str], encode: bool = False) -> Optional[Dict[str, Any]]:
+async def _third_party_once(
+    link: str, api_list: List[str], encode: bool = False
+) -> Optional[Dict[str, Any]]:
     target = quote(link, safe="") if encode else link
     for template in api_list:
         url = template.replace("{}", target)
@@ -200,7 +216,13 @@ async def _third_party_once(link: str, api_list: List[str], encode: bool = False
         data = payload.get("data")
         if isinstance(data, dict):
             video = data.get("url") or data.get("playAddr") or data.get("video")
-            images = data.get("images") or data.get("imageUrl") or data.get("pics") or data.get("imgurl") or []
+            images = (
+                data.get("images")
+                or data.get("imageUrl")
+                or data.get("pics")
+                or data.get("imgurl")
+                or []
+            )
             desc = data.get("title") or data.get("desc") or ""
             author = data.get("author") or ""
             cover = data.get("cover") or data.get("avatar") or ""
@@ -288,7 +310,11 @@ async def process_general_url(
 
     cover = data.get("cover")
     yield await cover_text_result(
-        event, cover, header, referer=KUAISHOU_REFERER if platform == "快手" else "", prefix="gen_cover"
+        event,
+        cover,
+        header,
+        referer=KUAISHOU_REFERER if platform == "快手" else "",
+        prefix="gen_cover",
     )
 
     images: List[str] = data.get("images") or []
@@ -315,11 +341,15 @@ async def process_general_url(
                 f"{platform} 视频直链已失效（多半是第三方接口返回的缓存地址过期）。"
             )
             return
-        path = await download_file(video_url, build_temp_path(platform, ".mp4"), headers=headers, timeout=240)
+        path = await download_file(
+            video_url, build_temp_path(platform, ".mp4"), headers=headers, timeout=240
+        )
         if not path:
             yield event.plain_result(f"{platform} 视频下载失败")
             return
-        components = await video_components(path, f"{platform}.mp4", video_size_limit_mb, event=event)
+        components = await video_components(
+            path, f"{platform}.mp4", video_size_limit_mb, event=event
+        )
         if components:
             yield event.chain_result(components)
         else:

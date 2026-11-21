@@ -137,7 +137,12 @@ def parse_card(raw: Any) -> str:
     title = desc = url = tag = appid = ""
     for node in candidates:
         title = title or _pick(node.get("title")) or _pick(node.get("nickname"))
-        desc = desc or _pick(node.get("desc")) or _pick(node.get("abstract")) or _pick(node.get("content"))
+        desc = (
+            desc
+            or _pick(node.get("desc"))
+            or _pick(node.get("abstract"))
+            or _pick(node.get("content"))
+        )
         for key in _URL_KEYS:
             url = url or _pick(node.get(key))
         tag = tag or _pick(node.get("tag"))
@@ -288,11 +293,14 @@ def install() -> Dict[str, bool]:
         _patched = True
         result["adapter"] = True
     else:
+
         async def _patched_convert(self, event, get_reply=True):  # noqa: ANN001
             abm = await original(self, event, get_reply=get_reply)
             try:
                 if enrich_message_str(abm):
-                    logger.debug(f"[R插件] 卡片已解析: {(getattr(abm, 'message_str', '') or '')[:160]}")
+                    logger.debug(
+                        f"[R插件] 卡片已解析: {(getattr(abm, 'message_str', '') or '')[:160]}"
+                    )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(f"[R插件] 卡片 message_str 后处理失败: {exc}")
             return abm

@@ -304,7 +304,9 @@ SSR_TEMPLATES = [
 ]
 
 
-async def _fetch_detail_by_ssr(aweme_id: str, prefer_note: bool = False) -> Optional[Dict[str, Any]]:
+async def _fetch_detail_by_ssr(
+    aweme_id: str, prefer_note: bool = False
+) -> Optional[Dict[str, Any]]:
     """分享页 SSR：页面内嵌 window._ROUTER_DATA，里面就有 aweme 详情"""
     templates = list(SSR_TEMPLATES)
     if prefer_note:
@@ -439,21 +441,29 @@ async def _fetch_detail_by_third_party(url: str) -> Tuple[Optional[Dict[str, Any
     if video_url and not _pick_video_url(normalized["video"]):
         normalized["video"]["play_addr"] = {"url_list": [video_url]}
 
-    logger.debug(f"[R插件][抖音] 第三方字段: video={video_url[:60]!r} cover={str(cover)[:50]!r} title={title[:30]!r}")
+    logger.debug(
+        f"[R插件][抖音] 第三方字段: video={video_url[:60]!r} cover={str(cover)[:50]!r} title={title[:30]!r}"
+    )
     if not _is_usable(normalized):
         return None, []
     return normalized, images
 
 
-async def _resolve_detail(url: str, aweme_id: str, cookie: str, enable_ssr: bool = True) -> Optional[Dict[str, Any]]:
+async def _resolve_detail(
+    url: str, aweme_id: str, cookie: str, enable_ssr: bool = True
+) -> Optional[Dict[str, Any]]:
     """按可靠性依次尝试，任何一个来源拿到可用数据就返回"""
     candidates = []
     if enable_ssr:
-        candidates.append(("SSR", lambda: _fetch_detail_by_ssr(aweme_id, prefer_note="note" in url)))
-    candidates.extend([
-        ("Cookie接口", lambda: _fetch_detail_by_api(aweme_id, cookie)),
-        ("iteminfo", lambda: _fetch_detail_by_item_info(aweme_id)),
-    ])
+        candidates.append(
+            ("SSR", lambda: _fetch_detail_by_ssr(aweme_id, prefer_note="note" in url))
+        )
+    candidates.extend(
+        [
+            ("Cookie接口", lambda: _fetch_detail_by_api(aweme_id, cookie)),
+            ("iteminfo", lambda: _fetch_detail_by_item_info(aweme_id)),
+        ]
+    )
     for name, loader in candidates:
         try:
             detail = await loader()
@@ -713,9 +723,10 @@ def _live_stats_text(room: Dict[str, Any], detail: Dict[str, Any]) -> str:
     """累计观看 + 本场涨粉：reflow 端是精确值（实测比 web 端的 "10万+" 更新），web 端只做兜底"""
     web_stats = room.get("stats") if isinstance(room.get("stats"), dict) else {}
     deep_stats = detail.get("stats") if isinstance(detail.get("stats"), dict) else {}
-    watched = _human_count(deep_stats.get("total_user")) or str(
-        web_stats.get("total_user_str") or ""
-    ).strip()
+    watched = (
+        _human_count(deep_stats.get("total_user"))
+        or str(web_stats.get("total_user_str") or "").strip()
+    )
     bits: List[str] = []
     if watched:
         bits.append(f"累计观看：{watched}")
@@ -893,9 +904,7 @@ async def _process_douyin_live(
         release_video(path)
     else:
         delete_file(path)
-        yield event.plain_result(
-            f"直播片段已录好但超过 {video_size_limit_mb}MB 发送上限，已跳过"
-        )
+        yield event.plain_result(f"直播片段已录好但超过 {video_size_limit_mb}MB 发送上限，已跳过")
 
 
 def _describe(item: Dict[str, Any]) -> Tuple[str, str]:
@@ -942,7 +951,9 @@ async def process_douyin_url(
 
     # 短链先跟一次跳转
     if "v.douyin.com" in dou_url or "webcast.amemv.com" in dou_url:
-        dou_url = await resolve_redirect(dou_url, headers={"User-Agent": DOUYIN_HEADER["User-Agent"]})
+        dou_url = await resolve_redirect(
+            dou_url, headers={"User-Agent": DOUYIN_HEADER["User-Agent"]}
+        )
         logger.info(f"[R插件][抖音] 跳转后: {dou_url}")
 
     # 直播：先走直播链路，别掉进作品解析
@@ -981,7 +992,9 @@ async def process_douyin_url(
     cover = _pick_cover(item, images)
 
     if images:
-        header_text = f"{identify_prefix}抖音图集，作者：{author}\n📝 简介：{desc}\n🖼️ 共 {len(images)} 张"
+        header_text = (
+            f"{identify_prefix}抖音图集，作者：{author}\n📝 简介：{desc}\n🖼️ 共 {len(images)} 张"
+        )
         yield await cover_text_result(
             event,
             cover if display_cover else "",
@@ -1014,7 +1027,9 @@ async def process_douyin_url(
     if not play_url:
         yield event.plain_result("抖音解析失败：没有拿到视频直链")
         return
-    logger.info(f"[R插件][抖音] 画质档位：{video_resolution}（ratio={_ratio_for(video_resolution) or '默认'}）")
+    logger.info(
+        f"[R插件][抖音] 画质档位：{video_resolution}（ratio={_ratio_for(video_resolution) or '默认'}）"
+    )
 
     # 有的来源给毫秒，有的给秒，>1000 才当毫秒处理
     raw_duration = video.get("duration") or item.get("duration") or 0
@@ -1027,9 +1042,7 @@ async def process_douyin_url(
     header_text = f"{identify_prefix}抖音，{author}\n📝 简介：{desc}"
 
     if video_duration_maximum and duration_s > video_duration_maximum:
-        limit_text = header_text + "\n" + limit_notice_precise(
-            duration_s, video_duration_maximum
-        )
+        limit_text = header_text + "\n" + limit_notice_precise(duration_s, video_duration_maximum)
         yield await cover_text_result(
             event,
             cover if display_cover else "",
@@ -1060,7 +1073,5 @@ async def process_douyin_url(
     if components:
         yield event.chain_result(components)
     else:
-        yield event.plain_result(
-            f"视频已下载但超过 {video_size_limit_mb}MB 发送上限，已跳过"
-        )
+        yield event.plain_result(f"视频已下载但超过 {video_size_limit_mb}MB 发送上限，已跳过")
     release_video(path)

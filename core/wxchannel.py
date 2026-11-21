@@ -37,9 +37,7 @@ from .common import (
 WXCHANNEL_YUANBAO_PARSE = "https://yuanbao.tencent.com/api/weixin/get_parse_result"
 WXCHANNEL_FEED_INFO = "https://channels.weixin.qq.com/finder-preview/api/feed/get_feed_info"
 
-WXCHANNEL_URL_REGEX = re.compile(
-    r"https?://weixin\.qq\.com/sph/[A-Za-z0-9_-]+", re.IGNORECASE
-)
+WXCHANNEL_URL_REGEX = re.compile(r"https?://weixin\.qq\.com/sph/[A-Za-z0-9_-]+", re.IGNORECASE)
 
 _UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -98,6 +96,7 @@ FEED_INFO_HEADERS = {
 
 # ---------------------------------------------------------------- 工具函数
 
+
 def generate_rid() -> str:
     """当前时间戳16进制 + '-' + 8位随机hex（模拟前端签名里的 _rid）"""
     stamp = format(int(time.time()), "x")
@@ -121,13 +120,16 @@ def clean_video_url(video_url: str) -> str:
         filekey = (query.get("encfilekey") or [""])[0]
         token = (query.get("token") or [""])[0]
         if filekey and token:
-            return f"{parsed.scheme}://{parsed.netloc}{parsed.path}?encfilekey={filekey}&token={token}"
+            return (
+                f"{parsed.scheme}://{parsed.netloc}{parsed.path}?encfilekey={filekey}&token={token}"
+            )
     except Exception:  # noqa: BLE001
         pass
     return video_url
 
 
 # ---------------------------------------------------------------- 两步解析
+
 
 async def parse_share_url(share_url: str, cookie: str) -> Dict[str, Any]:
     """Step 1：元宝接口解析分享链接"""
@@ -191,7 +193,9 @@ async def fetch_video_profile(share_url: str, cookie: str) -> Dict[str, Any]:
 
     err_code = feed.get("errCode")
     if err_code not in (None, 0):
-        raise RuntimeError(f"视频号接口返回错误: {feed.get('errMsg') or '未知错误'}（errCode={err_code}）")
+        raise RuntimeError(
+            f"视频号接口返回错误: {feed.get('errMsg') or '未知错误'}（errCode={err_code}）"
+        )
 
     data = feed.get("data") or {}
     if not data.get("feedInfo") and not data.get("authorInfo"):
@@ -225,6 +229,7 @@ async def fetch_video_profile(share_url: str, cookie: str) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------- 消息入口
+
 
 async def process_wxchannel_url(
     event,
@@ -314,7 +319,5 @@ async def process_wxchannel_url(
     if components:
         yield event.chain_result(components)
     else:
-        yield event.plain_result(
-            f"视频已下载但无法发送：可能超过大小上限 {video_size_limit_mb}MB"
-        )
+        yield event.plain_result(f"视频已下载但无法发送：可能超过大小上限 {video_size_limit_mb}MB")
     release_video(path)
