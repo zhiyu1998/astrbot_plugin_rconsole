@@ -40,6 +40,7 @@ import json
 import logging
 import os
 import shutil
+import socket
 import subprocess
 import tempfile
 import time
@@ -369,6 +370,25 @@ _TYPE_JS = r"""
 """
 
 
+def _free_port() -> int:
+    """向内核要一个空闲端口
+
+    原来是 9222 + pid % 900 猜出来的，撞上别的 chromium 时 urlopen 会连到
+    别人的 CDP，签名头就打到无辜实例上了。
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def _read_cdp_endpoint(port: int) -> str:
+    """同步读 /json/version（调用方丢进线程，别阻塞事件循环）"""
+    with urllib.request.urlopen(
+        f"http://127.0.0.1:{port}/json/version", timeout=2
+    ) as resp:
+        return resp.read().decode()
+
+
 class YuanbaoSigner:
     """
     起一个常驻 chromium，截获元宝签名头并缓存。
@@ -394,8 +414,12 @@ class YuanbaoSigner:
 
     async def _launch(self) -> None:
         chrome = find_chrome()
+        # 上一轮启动失败会留下 _proc / _user_dir，先收干净再起新的：
+        # 否则 mkdtemp 的新目录覆盖旧值，旧 profile 永远没人删
+        if self._proc is not None or self._user_dir:
+            await self.close()
         self._user_dir = tempfile.mkdtemp(prefix="yb_profile_")
-        port = 9222 + (os.getpid() % 900)
+        port = _free_port()
         args = [
             chrome,
             "--headless=new",
@@ -409,40 +433,45 @@ class YuanbaoSigner:
             "about:blank",
         ]
         logger.info(f"[R插件][元宝] 启动浏览器：{chrome}")
-        self._proc = subprocess.Popen(
-            args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-        )
-        ws_url = ""
-        deadline = time.monotonic() + 20
-        while time.monotonic() < deadline:
-            if self._proc.poll() is not None:
-                raise YuanbaoError("浏览器启动后立即退出（常见于缺 --no-sandbox 或缺共享库）")
-            try:
-                with urllib.request.urlopen(
-                    f"http://127.0.0.1:{port}/json/version", timeout=2
-                ) as resp:
-                    ws_url = json.loads(resp.read().decode())["webSocketDebuggerUrl"]
-                break
-            except Exception:  # noqa: BLE001
-                await asyncio.sleep(0.3)
-        if not ws_url:
-            raise YuanbaoError("浏览器没起来（CDP 端点 20 秒内不可用）")
+        try:
+            self._proc = subprocess.Popen(
+                args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            ws_url = ""
+            deadline = time.monotonic() + 20
+            while time.monotonic() < deadline:
+                if self._proc.poll() is not None:
+                    raise YuanbaoError("浏览器启动后立即退出（常见于缺 --no-sandbox 或缺共享库）")
+                try:
+                    # urlopen 是同步阻塞，这一等最多 20 秒，别卡住事件循环
+                    body = await asyncio.to_thread(_read_cdp_endpoint, port)
+                    ws_url = json.loads(body)["webSocketDebuggerUrl"]
+                    break
+                except Exception:  # noqa: BLE001
+                    await asyncio.sleep(0.3)
+            if not ws_url:
+                raise YuanbaoError("浏览器没起来（CDP 端点 20 秒内不可用）")
 
-        self._cdp = await CDP.connect(ws_url)
-        info = await self._cdp.send("Target.createTarget", {"url": "about:blank"})
-        self._target = info["targetId"]
-        attach = await self._cdp.send(
-            "Target.attachToTarget", {"targetId": self._target, "flatten": True}
-        )
-        self._session = attach["sessionId"]
-        await self._cdp.send("Page.enable", session=self._session)
-        await self._cdp.send("Network.enable", session=self._session)
-        # 必须在 navigate 之前注入，否则页面首屏的请求漏掉
-        await self._cdp.send(
-            "Page.addScriptToEvaluateOnNewDocument",
-            {"source": _HOOK_JS},
-            session=self._session,
-        )
+            self._cdp = await CDP.connect(ws_url)
+            info = await self._cdp.send("Target.createTarget", {"url": "about:blank"})
+            self._target = info["targetId"]
+            attach = await self._cdp.send(
+                "Target.attachToTarget", {"targetId": self._target, "flatten": True}
+            )
+            self._session = attach["sessionId"]
+            await self._cdp.send("Page.enable", session=self._session)
+            await self._cdp.send("Network.enable", session=self._session)
+            # 必须在 navigate 之前注入，否则页面首屏的请求漏掉
+            await self._cdp.send(
+                "Page.addScriptToEvaluateOnNewDocument",
+                {"source": _HOOK_JS},
+                session=self._session,
+            )
+        except BaseException:
+            # Popen 之后任何一步失败（端点起不来 / attach 失败 / 被取消）都要回收，
+            # 否则一只 chrome + 一个 tmp profile 就留在机器上了
+            await self.close()
+            raise
 
     async def _load(self, cookie: str) -> None:
         if self._cdp is None:
@@ -778,12 +807,23 @@ _signer: Optional[YuanbaoSigner] = None
 _signer_cookie = ""
 
 
-def get_signer(cookie: str) -> YuanbaoSigner:
-    """按 cookie 复用同一个签名器；cookie 变了就换新的"""
+async def get_signer(cookie: str) -> YuanbaoSigner:
+    """按 cookie 复用同一个签名器；cookie 变了先换新的，再把旧的那只收干净
+
+    判定→创建→赋值全在同步段里跑完（中间没有 await），并发调用不会各自起一只浏览器；
+    close 放在后面 await，旧实例的 chromium 进程 / CDP 连接 / tmp profile 才回收得掉。
+    """
     global _signer, _signer_cookie
-    if _signer is None or _signer_cookie != cookie:
-        _signer = YuanbaoSigner(cookie)
-        _signer_cookie = cookie
+    if _signer is not None and _signer_cookie == cookie:
+        return _signer
+    old, _signer = _signer, YuanbaoSigner(cookie)
+    _signer_cookie = cookie
+    if old is not None:
+        logger.info("[R插件][元宝] Cookie 变更，回收旧签名器")
+        try:
+            await old.close()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"[R插件][元宝] 回收旧签名器失败: {exc}")
     return _signer
 
 
@@ -802,5 +842,5 @@ async def ask(
     """一句话调用（供上层 handler 用）"""
     if not (cookie or "").strip():
         raise YuanbaoError("没有配置元宝 Cookie")
-    client = YuanbaoClient(cookie, get_signer(cookie), model=model, timeout=timeout)
+    client = YuanbaoClient(cookie, await get_signer(cookie), model=model, timeout=timeout)
     return await client.ask(prompt)

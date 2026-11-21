@@ -258,6 +258,9 @@ function syncDisabledPlatformsField(disabled) {
   if (field) field.value = disabled;
   const area = document.querySelector('.field[data-key="DISABLED_PLATFORMS"] textarea');
   if (!area) return;
+  // 用户正在这个框里打字（或已有未保存的手改）时不要覆盖 DOM：
+  // 开关 POST 的响应回来会把正在输入的内容抹掉，显示与 pending 就对不上了
+  if (state.pending.has("DISABLED_PLATFORMS") || document.activeElement === area) return;
   area.value = disabled.join(NL);
   const meta = area.parentElement && area.parentElement.querySelector(".list-meta");
   if (meta) meta.textContent = `${disabled.length} 项`;
