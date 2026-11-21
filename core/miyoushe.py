@@ -155,7 +155,7 @@ async def process_miyoushe_url(
             timeout=240,
         )
         if path:
-            components = video_components(path, "miyoushe.mp4", video_size_limit_mb)
+            components = await video_components(path, "miyoushe.mp4", video_size_limit_mb, event=event)
             if components:
                 yield event.chain_result(components)
             else:

@@ -308,7 +308,7 @@ async def _handle_bbs(event: AstrMessageEvent, link_id: str, cookie: str, identi
             timeout=300,
         )
         if path:
-            components = video_components(path, "xiaoheihe.mp4", video_size_limit_mb)
+            components = await video_components(path, "xiaoheihe.mp4", video_size_limit_mb, event=event)
             if components:
                 yield event.chain_result(components)
             else:
@@ -547,7 +547,7 @@ async def _handle_game(event: AstrMessageEvent, kind: str, app_id: str, cookie: 
             timeout=300,
         )
         if path:
-            components = video_components(path, "xiaoheihe_game.mp4", video_size_limit_mb)
+            components = await video_components(path, "xiaoheihe_game.mp4", video_size_limit_mb, event=event)
             if components:
                 yield event.chain_result(components)
             else:

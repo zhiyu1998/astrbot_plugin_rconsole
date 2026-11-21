@@ -30,6 +30,7 @@ from .core.common import (
     set_file_service,
     set_proxy,
     set_temp_dir,
+    set_video_url_base,
 )
 from .core.douyin import process_douyin_url, cleanup_abogus
 from .core.general import process_general_url
@@ -46,7 +47,7 @@ from .core.xhs import process_xiaohongshu_url
 from .core.xiaoheihe import process_xiaoheihe_url
 
 PLUGIN_NAME = "astrbot_plugin_rconsole"
-VERSION = "1.2.15"
+VERSION = "1.2.16"
 PLATFORM_ALIASES = {
     "douyin": "抖音",
     "bilibili": "哔哩哔哩",
@@ -91,8 +92,8 @@ BILIBILI_ROUTE_REGEX = (
     PLUGIN_NAME,
     "RrOrange",
     "R插件迁移版：抖音/B站/快手/微博/AcFun/小红书/米游社/小黑盒/微视/YouTube/微信视频号 "
-    "链接解析 + AI 总结（已适配 Telegram 发送）",
-    "1.2.15",
+    "链接解析 + AI 总结（已适配 Telegram / QQ 官方机器人发送）",
+    "1.2.16",
 )
 class RPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -198,6 +199,17 @@ class RPlugin(Star):
         # 否则 NapCat 在容器里看不到宿主机路径，只能走 base64
         self.file_service_base = ""
         self._apply_file_service_mode(quiet=True)
+
+        # 视频「URL 直发」：给 NapCat 等 OneBot 协议端配一个它能访问到的 AstrBot 文件服务地址，
+        # 填了以后视频走 URL 直发（协议端自己下载），不再 base64；留空保持原逻辑。
+        # 平台列表用于避免把 172.17.0.1 这类内网地址发给 Telegram / QQ 官方。
+        self.video_url_base = str(self._cfg("VIDEO_URL_BASE", "") or "").strip()
+        self.video_url_platforms = self._list_cfg("VIDEO_URL_PLATFORMS", ["aiocqhttp"])
+        set_video_url_base(self.video_url_base, self.video_url_platforms)
+        if self.video_url_base:
+            logger.info(
+                f"[R插件] 视频 URL 直发已启用：{self.video_url_base} → {self.video_url_platforms}"
+            )
 
         # 下载并发：concurrency = 同时几个任务（队列），threads = 单文件分段数（多线程）
         self.download_concurrency = int(self._cfg("DOWNLOAD_CONCURRENCY", 2) or 2)

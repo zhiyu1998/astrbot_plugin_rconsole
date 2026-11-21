@@ -421,7 +421,7 @@ async def process_youtube_url(
         return
 
     logger.info(f"[R插件][YouTube] 下载完成 {path}")
-    components = video_components(path, f"{vid}.mp4", video_size_limit_mb)
+    components = await video_components(path, f"{vid}.mp4", video_size_limit_mb, event=event)
     if components:
         yield event.chain_result(components)
     else:

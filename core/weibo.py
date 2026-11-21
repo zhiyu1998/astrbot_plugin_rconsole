@@ -307,7 +307,7 @@ async def process_weibo_url(
             timeout=240,
         )
         if path:
-            components = video_components(path, "weibo.mp4", video_size_limit_mb)
+            components = await video_components(path, "weibo.mp4", video_size_limit_mb, event=event)
             if components:
                 yield event.chain_result(components)
             delete_file(path)

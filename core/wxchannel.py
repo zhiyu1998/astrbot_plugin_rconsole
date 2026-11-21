@@ -310,7 +310,7 @@ async def process_wxchannel_url(
         yield event.plain_result("视频号视频下载失败，可能视频链接已过期，请重新分享链接")
         return
 
-    components = video_components(path, "wxchannel.mp4", video_size_limit_mb)
+    components = await video_components(path, "wxchannel.mp4", video_size_limit_mb, event=event)
     if components:
         yield event.chain_result(components)
     else:

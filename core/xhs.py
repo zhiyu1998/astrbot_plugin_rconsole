@@ -622,7 +622,7 @@ async def process_xiaohongshu_url(
         if not video_path:
             yield event.plain_result("小红书视频下载失败")
             return
-        components = video_components(video_path, f"{xhs_id}.mp4", video_size_limit_mb)
+        components = await video_components(video_path, f"{xhs_id}.mp4", video_size_limit_mb, event=event)
         if components:
             yield event.chain_result(components)
         else:

@@ -97,7 +97,7 @@ async def process_weishi_url(
     if not path:
         yield event.plain_result("微视视频下载失败")
         return
-    components = video_components(path, "weishi.mp4", video_size_limit_mb)
+    components = await video_components(path, "weishi.mp4", video_size_limit_mb, event=event)
     if components:
         yield event.chain_result(components)
     else:

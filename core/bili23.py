@@ -494,7 +494,7 @@ async def _process_bili_live(
         else:
             logger.warning("[R插件][B站直播] flv 转 mp4 失败（没装 ffmpeg？），直接发 flv")
 
-    components = video_components(path, "bili_live.mp4", video_size_limit_mb)
+    components = await video_components(path, "bili_live.mp4", video_size_limit_mb, event=event)
     if components:
         yield event.chain_result(components)
         release_video(path)
@@ -859,7 +859,7 @@ async def process_bilibili_url(
 
     # 发送：NapCat 在容器里看不到宿主机路径，file:// 会 ENOENT，这里转 base64
     logger.info(f"[R插件][B站] 下载方式：{source}，文件：{merged}")
-    components = video_components(merged, f"{video_id}.mp4", video_size_limit_mb)
+    components = await video_components(merged, f"{video_id}.mp4", video_size_limit_mb, event=event)
     if components:
         yield event.chain_result(components)
     else:

@@ -887,7 +887,7 @@ async def _process_douyin_live(
         else:
             logger.warning("[R插件][抖音直播] flv 转 mp4 失败（没装 ffmpeg？），直接发 flv")
 
-    components = video_components(path, "douyin_live.mp4", video_size_limit_mb)
+    components = await video_components(path, "douyin_live.mp4", video_size_limit_mb, event=event)
     if components:
         yield event.chain_result(components)
         release_video(path)
@@ -1056,7 +1056,7 @@ async def process_douyin_url(
     if not path:
         yield event.plain_result("抖音视频下载失败，可能是链接过期或被限流")
         return
-    components = video_components(path, "douyin.mp4", video_size_limit_mb)
+    components = await video_components(path, "douyin.mp4", video_size_limit_mb, event=event)
     if components:
         yield event.chain_result(components)
     else:

@@ -19,6 +19,18 @@
     "default": 30,
     "hint": "默认 30（填 0 也按 30 算）。超过上限只发文字和原链接。没配 callback_api_base 时视频走 base64，建议别超过 50"
   },
+  "VIDEO_URL_BASE": {
+    "description": "【全局】视频直发文件服务地址（可选）",
+    "type": "string",
+    "default": "",
+    "hint": "给 OneBot 协议端（NapCat/LLOneBot）填一个它能访问到的 AstrBot 文件服务地址，例如 NapCat 跑在 docker 里时填 http://172.17.0.1:6185（宿主机 docker 网关）。填了以后视频走 URL 直发，不再读成 base64；留空保持原逻辑。注意协议端要能访问该地址（容器隔离时用网关地址，不是 127.0.0.1）。"
+  },
+  "VIDEO_URL_PLATFORMS": {
+    "description": "【全局】走 URL 直发的平台类型",
+    "type": "list",
+    "default": ["aiocqhttp"],
+    "hint": "只有这些平台类型（AstrBot 平台类型名，如 aiocqhttp/onebot）才使用上面的 URL 直发，避免把 172.17.0.1 这类内网地址发给 Telegram / QQ 官方。"
+  },
   "IMAGE_USE_FORWARD": {
     "description": "【全局】多图改用合并转发",
     "type": "bool",

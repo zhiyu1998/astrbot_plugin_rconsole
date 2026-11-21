@@ -197,7 +197,7 @@ async def process_acfun_url(
             yield event.plain_result("AcFun 视频合并失败，可能是服务器缺少 ffmpeg")
             return
 
-        components = video_components(merged, f"{meta.get('title') or 'acfun'}.mp4", video_size_limit_mb)
+        components = await video_components(merged, f"{meta.get('title') or 'acfun'}.mp4", video_size_limit_mb, event=event)
         if components:
             yield event.chain_result(components)
         else:

@@ -23,6 +23,7 @@ import astrbot.api.message_components as Comp
 import httpx
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
+from astrbot.core import file_token_service
 
 # ---------------------------------------------------------------- 路径
 
@@ -871,18 +872,61 @@ def build_image_components(paths: Sequence[str]) -> List[Comp.Image]:
 # 看不到宿主机路径，直接 ENOENT。
 _USE_FILE_SERVICE = False
 
+# 视频「URL 直发」：给 OneBot 协议端（NapCat / LLOneBot 等）一个它能下载到的 HTTP 地址，
+# 让协议端自己去拉流，而不是插件把整个视频读成 base64 塞进 WebSocket。
+#   * 完全绕开 base64：不吃内存、不受「文件名太长 / base64 串过长」限制
+#   * 走 AstrBot 自带的 /api/file/{token} 文件服务（无需鉴权），由协议端按 URL 下载
+#   * 只对配置里列出的平台类型生效，避免把内网地址（如 172.17.0.1）发给 Telegram / QQ 官方
+_VIDEO_URL_BASE = ""
+_VIDEO_URL_PLATFORMS = ("aiocqhttp", "napcat", "onebot")
+# 文件 token 有效期（秒）：NapCat 可能多次 Range 拉取，用 single_use=False + 较长 TTL
+_VIDEO_URL_TOKEN_TTL = 900.0
+
 
 def set_file_service(enabled: bool) -> None:
     global _USE_FILE_SERVICE
     _USE_FILE_SERVICE = bool(enabled)
 
 
-def video_components(path: str, name: str = "", max_mb: int = 0) -> List[Any]:
-    """
-    本地视频转成发送组件。
+def set_video_url_base(base: str, platforms=None) -> str:
+    """配置「URL 直发」的文件服务地址与生效平台类型（AstrBot 平台类型名，如 aiocqhttp）。"""
+    global _VIDEO_URL_BASE, _VIDEO_URL_PLATFORMS
+    _VIDEO_URL_BASE = (base or "").strip().rstrip("/")
+    if platforms is not None:
+        cleaned = tuple(str(p).strip().lower() for p in platforms if str(p).strip())
+        _VIDEO_URL_PLATFORMS = cleaned or _VIDEO_URL_PLATFORMS
+    return _VIDEO_URL_BASE
 
-    * 配了 callback_api_base：直接用 file:// 交给 AstrBot 的文件服务转 URL（大文件首选）
-    * 没配：读成 base64:// 发送（AstrBot 对 Image/Record 就是这么干的，唯独 Video 是透传）
+
+def _platform_of(event: Any) -> str:
+    """取事件所属平台的类型名（aiocqhttp / telegram / qq_official …），失败返回空串。"""
+    if event is None:
+        return ""
+    try:
+        return str(event.get_platform_name() or "").lower()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _url_send_enabled(platform: str) -> bool:
+    """该平台类型是否走 URL 直发（前提是已配置 _VIDEO_URL_BASE）。"""
+    if not _VIDEO_URL_BASE:
+        return False
+    plat = (platform or "").lower()
+    return any(token in plat for token in _VIDEO_URL_PLATFORMS)
+
+
+async def video_components(path: str, name: str = "", max_mb: int = 0, *, event: Any = None) -> List[Any]:
+    """
+    本地视频转成发送组件（按平台选择最优发送方式，能不 base64 就不 base64）。
+
+    策略优先级：
+    1. qq_official（QQ 官方机器人）：官方适配器不支持 base64://，且 >5MB 必须走 URL/分片。
+       这里强制走本地文件路径（file:// → 适配器自行上传，>10MB 自动分片），并按官方 30MB 上限钳制。
+    2. OneBot/NapCat（_VIDEO_URL_BASE 已配置且平台命中）：注册到 AstrBot 文件服务，发 URL 直发，
+       协议端自己下载，彻底避免 base64。
+    3. 配了全局 callback_api_base：用 file:// 交给 AstrBot 文件服务转 URL。
+    4. 兜底：base64://（旧行为，仅在上面的直发路径都不可用时使用）。
 
     超过 max_mb（MB）时返回空列表，由调用方改发文字提示。
     """
@@ -890,13 +934,39 @@ def video_components(path: str, name: str = "", max_mb: int = 0) -> List[Any]:
         return []
 
     size_mb = os.path.getsize(path) / 1024 / 1024
+    platform = _platform_of(event)
+    is_official = ("qq_official" in platform) or ("official" in platform)
+
     if max_mb and max_mb > 0 and size_mb > max_mb:
         logger.warning(f"[R插件] 视频 {path} 体积 {size_mb:.1f}MB 超过上限 {max_mb}MB，跳过发送")
         return []
 
+    # 1) QQ 官方机器人：绝不 base64，走本地文件路径交给适配器上传（>30MB 官方会降级/报错，直接跳过改发文字）
+    if is_official:
+        if size_mb > 30:
+            logger.warning(
+                f"[R插件][qq_official] 视频 {size_mb:.1f}MB 超过官方 30MB 发送上限，跳过发送（改发文字）"
+            )
+            return []
+        return [Comp.Video.fromFileSystem(path)]
+
+    # 2) OneBot/NapCat：URL 直发（需要协议端能访问到 _VIDEO_URL_BASE）
+    if _url_send_enabled(platform):
+        try:
+            token = await file_token_service.register_file(
+                path, timeout=_VIDEO_URL_TOKEN_TTL, single_use=False
+            )
+            url = f"{_VIDEO_URL_BASE}/api/file/{token}"
+            logger.info(f"[R插件] 视频直发（文件服务 URL）：{url}")
+            return [Comp.Video(url)]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"[R插件] 注册文件服务失败，回退 base64：{exc}")
+
+    # 3) 全局文件服务（callback_api_base）：走 file:// 由 AstrBot 转 URL
     if _USE_FILE_SERVICE:
         return [Comp.Video.fromFileSystem(path)]
 
+    # 4) 兜底：base64
     try:
         with open(path, "rb") as fp:
             payload = base64.b64encode(fp.read()).decode()
@@ -1000,27 +1070,30 @@ def release_video(path: str, delay: float = 300.0) -> None:
     发送完本地视频后清理。
 
     base64 模式数据已经在内存里了，可以立刻删；
-    文件服务模式下 AstrBot 是在真正发送时才把路径注册成 URL，文件必须还在，
-    所以延后删除，交给事件循环定时器处理。
+    URL / 文件服务模式下，协议端是在真正发送时才来拉取文件，文件必须还在，
+    所以延后删除（URL 直发时按 token 有效期延长），交给事件循环定时器处理。
     """
     if not path:
         return
-    if _USE_FILE_SERVICE:
+    effective_delay = delay
+    if _VIDEO_URL_BASE:
+        effective_delay = max(delay, _VIDEO_URL_TOKEN_TTL)
+    if _USE_FILE_SERVICE or _VIDEO_URL_BASE:
         try:
-            asyncio.get_running_loop().call_later(delay, lambda: delete_file(path))
+            asyncio.get_running_loop().call_later(effective_delay, lambda: delete_file(path))
             return
         except RuntimeError:
             pass
     delete_file(path)
 
 
-def video_result(event: AstrMessageEvent, path: str, name: str, max_mb: int, fallback: str) -> Any:
+async def video_result(event: AstrMessageEvent, path: str, name: str, max_mb: int, fallback: str) -> Any:
     """视频统一发送：能发就发，超上限/读不出来就发文字提示
 
     fallback 文案里别带平台链接：机器人自己的回复会再被路由命中（见 AGENTS 2.5），
     需要脱敏时先过 strip_route_links()。
     """
-    components = video_components(path, name, max_mb)
+    components = await video_components(path, name, max_mb, event=event)
     if components:
         return event.chain_result(components)
     return event.plain_result(fallback)

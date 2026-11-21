@@ -319,7 +319,7 @@ async def process_general_url(
         if not path:
             yield event.plain_result(f"{platform} 视频下载失败")
             return
-        components = video_components(path, f"{platform}.mp4", video_size_limit_mb)
+        components = await video_components(path, f"{platform}.mp4", video_size_limit_mb, event=event)
         if components:
             yield event.chain_result(components)
         else:
