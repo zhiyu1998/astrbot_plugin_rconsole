@@ -7,7 +7,7 @@
 <div align="center">
 <h1>astrbot_plugin_rconsole</h1>
 <p>
-<a href="https://github.com/zhiyu1998/astrbot_plugin_rconsole/releases"><img src="https://img.shields.io/badge/version-v1.2.17-2f6f5e" alt="Version v1.2.17"></a>
+<a href="https://github.com/zhiyu1998/astrbot_plugin_rconsole/releases"><img src="https://img.shields.io/badge/version-v1.2.18-2f6f5e" alt="Version v1.2.18"></a>
 <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-%3E%3D3.10-3776ab" alt="Python 3.10+"></a>
 <a href="https://astrbot.app/"><img src="https://img.shields.io/badge/AstrBot-plugin-4c78a8" alt="AstrBot Plugin"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-2f6f5e" alt="AGPL-3.0 License"></a>
@@ -125,6 +125,7 @@ Cookie 获取：浏览器登录对应网站 → `F12` → **Network** → 随便
 | AI 总结 | ✅ | 微信文章 / ArXiv / 少数派 / B站专栏 / 知乎 / GitHub / V2EX，用 AstrBot 当前会话的模型 |
 | Telegram 发送适配 | ✅ | 文字先行 + 上传超时放宽（5s→60s）+ 组件级重试，封面图超时不会再吞掉文案 |
 | 网易云音乐 | ✅ | 单曲 / 播客链接解析（需自建 NeteaseCloudMusicApi） |
+| 小宇宙 | ✅ | 单集 / 播客主页 / `xyzfm.link` 短链解析；支持语音 / 文件 / 卡片发送，公开单集免登录可用（付费单集可选填 Token） |
 
 > ✅ 可用　⚠️ 依赖外部接口　❌ 未迁移
 
@@ -142,6 +143,7 @@ B站、小红书、抖音等卡片也能识别——否则这类消息在 AstrBo
 同时也感谢这些开源项目：
 
 - [ltaoo/wx_channels_download](https://github.com/ltaoo/wx_channels_download) —— 微信视频号解析思路与接口参考
+- [ultrazg/xyz](https://github.com/ultrazg/xyz) / [shiquda/xyz-dl](https://github.com/shiquda/xyz-dl) —— 小宇宙播客解析接口与认证思路参考
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) —— YouTube 解析
 - [bilibili-api-python](https://github.com/Nemo2011/bilibili-api) —— B 站解析
 - [AstrBot](https://github.com/AstrBotDevs/AstrBot) —— 插件运行框架
