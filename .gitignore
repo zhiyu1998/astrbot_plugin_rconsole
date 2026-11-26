@@ -1,16 +1,50 @@
-# Python-generated files
+# Byte-compiled / optimized / cache files
 __pycache__/
-*.py[oc]
+*.py[cod]
+*$py.class
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+
+# Packaging & builds
 build/
 dist/
 wheels/
-*.egg-info
-.idea
-.cursor
-.vscode
+*.egg-info/
+*.egg
 
 # Virtual environments
-.venv
+.venv/
 .python-version
-# 本地备忘（含服务器地址等部署信息，不入库）
+
+# IDE & Editor settings
+.idea/
+.cursor/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local memo & secrets (含服务器地址等部署信息，不入库)
 AGENTS.md
+AGENTS.local.md
+
+# Agent & local tool state
+.deja/
+
+# Scratch & test files
+scratch/
+
+# Runtime data & temp files
+data/
+temp/
+*.log
+*.tmp
+
+# Backup & patch files
+*.orig
+*.bak
+*.patch
+
+# Windows console artifact
+CON
