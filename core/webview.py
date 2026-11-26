@@ -351,6 +351,10 @@ def register_view_apis(context, plugin, plugin_name: str) -> None:
                     "xhh_ck": bool(str(config.get("XHH_CK") or "").strip()),
                     "wxchannel_cookie": bool(str(config.get("WXCHANNEL_COOKIE") or "").strip()),
                     "youtube_cookies": bool(str(config.get("YOUTUBE_COOKIES") or "").strip()),
+                    "xiaoyuzhou_token": bool(
+                        str(config.get("XIAOYUZHOU_ACCESS_TOKEN") or "").strip()
+                        or str(config.get("XIAOYUZHOU_REFRESH_TOKEN") or "").strip()
+                    ),
                 },
                 "download": {
                     "concurrency": config.get("DOWNLOAD_CONCURRENCY", 2),

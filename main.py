@@ -45,9 +45,13 @@ from .core.weibo import process_weibo_url
 from .core.weishi import process_weishi_url
 from .core.xhs import process_xiaohongshu_url
 from .core.xiaoheihe import process_xiaoheihe_url
+from .core.xiaoyuzhou import (
+    process_xiaoyuzhou_url,
+    send_mode_from_setting as xyz_send_mode,
+)
 
 PLUGIN_NAME = "astrbot_plugin_rconsole"
-VERSION = "1.2.17"
+VERSION = "1.2.18"
 PLATFORM_ALIASES = {
     "douyin": "抖音",
     "bilibili": "哔哩哔哩",
@@ -61,6 +65,7 @@ PLATFORM_ALIASES = {
     "youtube": "YouTube",
     "wxchannel": "微信视频号",
     "netease": "网易云",
+    "xiaoyuzhou": "小宇宙",
     "yuanbao": "元宝",
     "summary": "AI总结",
 }
@@ -93,7 +98,7 @@ BILIBILI_ROUTE_REGEX = (
     "RrOrange",
     "R插件迁移版：抖音/B站/快手/微博/AcFun/小红书/米游社/小黑盒/微视/YouTube/微信视频号 "
     "链接解析 + AI 总结（已适配 Telegram / QQ 官方机器人发送）",
-    "1.2.17",
+    "1.2.18",
 )
 class RPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -275,6 +280,18 @@ class RPlugin(Star):
             self.yuanbao_timeout = 90
         self.netease_temp_fallback = bool(self._cfg("NETEASE_TEMP_FALLBACK", True))
 
+        # ---------------- 小宇宙播客
+        self.xiaoyuzhou_display_cover = bool(self._cfg("XIAOYUZHOU_DISPLAY_COVER", True))
+        self.xiaoyuzhou_display_info = bool(self._cfg("XIAOYUZHOU_DISPLAY_INFO", True))
+        self.xiaoyuzhou_display_intro = bool(self._cfg("XIAOYUZHOU_DISPLAY_INTRO", True))
+        self.xiaoyuzhou_intro_len_limit = self._int_cfg("XIAOYUZHOU_INTRO_LEN_LIMIT", 120)
+        self.xiaoyuzhou_send_mode = xyz_send_mode(self._cfg("XIAOYUZHOU_SEND_MODE", "语音"))
+        self.xiaoyuzhou_duration = self._int_cfg("XIAOYUZHOU_DURATION", 0)
+        self.xiaoyuzhou_audio_max_mb = self._int_cfg("XIAOYUZHOU_AUDIO_MAX_MB", 50)
+        self.xiaoyuzhou_access_token = str(self._cfg("XIAOYUZHOU_ACCESS_TOKEN", "") or "").strip()
+        self.xiaoyuzhou_refresh_token = str(self._cfg("XIAOYUZHOU_REFRESH_TOKEN", "") or "").strip()
+        self.xiaoyuzhou_device_id = str(self._cfg("XIAOYUZHOU_DEVICE_ID", "") or "").strip()
+
         self.youtube_cookies = set_cookie_file(str(self._cfg("YOUTUBE_COOKIES", "") or ""))
         if self.youtube_cookies:
             logger.info(f"[R插件] YouTube Cookie：{self.youtube_cookies}")
@@ -298,6 +315,7 @@ class RPlugin(Star):
             "下载与代理",
             "暂存目录",
             "网易云音乐",
+            "小宇宙",
             "腾讯元宝",
             "AI 总结",
         ]
@@ -310,6 +328,15 @@ class RPlugin(Star):
         except Exception:  # noqa: BLE001
             return default
         return default if value is None else value
+
+    def _int_cfg(self, key: str, default: int) -> int:
+        value = self._cfg(key, default)
+        if value == "":
+            return default
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
 
     def _list_cfg(self, key: str, default: list) -> list:
         value = self._cfg(key, default)
@@ -610,6 +637,33 @@ class RPlugin(Star):
             temp_fallback=self.netease_temp_fallback,
             quality_fallback=self.netease_quality_fallback,
             identify_prefix=self.identify_prefix,
+        ):
+            yield result
+
+    # ------------------------------------------------------------ 小宇宙播客
+
+    @filter.regex(r".*(?:xiaoyuzhoufm\.com|xyzfm\.link).*")
+    async def xiaoyuzhou(self, event: AstrMessageEvent) -> AsyncGenerator[Any, None]:
+        if not self._enabled("xiaoyuzhou"):
+            return
+        try:
+            if str(event.get_self_id()) == str(event.get_sender_id()):
+                return
+        except Exception:  # noqa: BLE001
+            pass
+        async for result in process_xiaoyuzhou_url(
+            event,
+            identify_prefix=self.identify_prefix,
+            display_cover=self.xiaoyuzhou_display_cover,
+            display_info=self.xiaoyuzhou_display_info,
+            display_intro=self.xiaoyuzhou_display_intro,
+            intro_len_limit=self.xiaoyuzhou_intro_len_limit,
+            send_mode=self.xiaoyuzhou_send_mode,
+            duration_limit=self.xiaoyuzhou_duration,
+            audio_max_mb=self.xiaoyuzhou_audio_max_mb,
+            access_token=self.xiaoyuzhou_access_token,
+            refresh_token=self.xiaoyuzhou_refresh_token,
+            device_id=self.xiaoyuzhou_device_id,
         ):
             yield result
 

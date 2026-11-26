@@ -117,7 +117,7 @@
     "description": "【全局】禁用的解析平台",
     "type": "list",
     "default": [],
-    "hint": "可选：douyin / bilibili / kuaishou / weibo / acfun / xhs / miyoushe / xiaoheihe / weishi（也可写中文名）"
+    "hint": "可选：douyin / bilibili / kuaishou / weibo / acfun / xhs / miyoushe / xiaoheihe / weishi / youtube / wxchannel / netease / xiaoyuzhou / summary（也可写中文名）"
   },
   "GENERAL_PARSE_APIS": {
     "description": "【全局】通用第三方解析接口",
@@ -468,6 +468,73 @@
     "type": "bool",
     "default": true,
     "hint": "自建 API 拿不到音源（无版权 / 需要会员）时，再试第三方解析接口。接口随时可能失效，失败会自动忽略"
+  },
+  "XIAOYUZHOU_DISPLAY_COVER": {
+    "description": "【小宇宙】显示封面",
+    "type": "bool",
+    "default": true,
+    "hint": "关闭后只发文字与音频，不附带封面图"
+  },
+  "XIAOYUZHOU_DISPLAY_INFO": {
+    "description": "【小宇宙】显示播放/评论等数据",
+    "type": "bool",
+    "default": true,
+    "hint": "展示播放、评论、收藏、点赞或播客订阅数"
+  },
+  "XIAOYUZHOU_DISPLAY_INTRO": {
+    "description": "【小宇宙】显示简介",
+    "type": "bool",
+    "default": true,
+    "hint": "附带单集或播客的简介正文"
+  },
+  "XIAOYUZHOU_INTRO_LEN_LIMIT": {
+    "description": "【小宇宙】简介截断长度",
+    "type": "int",
+    "default": 120,
+    "hint": "0 或 -1 表示不截断（小宇宙 Shownotes 通常较长，建议保留 120 左右）"
+  },
+  "XIAOYUZHOU_SEND_MODE": {
+    "description": "【小宇宙】音频发送方式：语音 / 文件 / 卡片",
+    "type": "string",
+    "default": "语音",
+    "options": [
+      "语音",
+      "文件",
+      "卡片"
+    ],
+    "hint": "语音：m4a 自动转 mp3 后发语音（过大或协议端拒绝时自动降级为文件）；文件：直接以文件形式发送；卡片：OneBot 发送自定义音乐卡片（大体积单集无需下载，可直接点开收听）",
+    "obvious_hint": true
+  },
+  "XIAOYUZHOU_DURATION": {
+    "description": "【小宇宙】音频时长上限（秒）",
+    "type": "int",
+    "default": 0,
+    "hint": "0 或 -1 表示不限制时长（播客单集常在 30~120 分钟，默认不按全局视频 480 秒拦截）"
+  },
+  "XIAOYUZHOU_AUDIO_MAX_MB": {
+    "description": "【小宇宙】音频体积上限（MB）",
+    "type": "int",
+    "default": 50,
+    "hint": "超过上限只发封面与信息不下载音频；0 表示不限制（卡片模式不下载，不受此限）。未配 VIDEO_URL_BASE 时 OneBot 语音/文件走 base64 上限 20MB，配了 VIDEO_URL_BASE 可直发更大音频",
+    "obvious_hint": true
+  },
+  "XIAOYUZHOU_ACCESS_TOKEN": {
+    "description": "【小宇宙】Access Token（可选）",
+    "type": "string",
+    "default": "",
+    "hint": "公开单集无需填写即可解析。仅用于已购买的付费/私密单集或网页兜底，填抓包得到的 x-jike-access-token"
+  },
+  "XIAOYUZHOU_REFRESH_TOKEN": {
+    "description": "【小宇宙】Refresh Token（可选）",
+    "type": "string",
+    "default": "",
+    "hint": "可选。填 x-jike-refresh-token，配合 Access Token / Device ID 在 401 时自动刷新登录态"
+  },
+  "XIAOYUZHOU_DEVICE_ID": {
+    "description": "【小宇宙】Device ID（可选）",
+    "type": "string",
+    "default": "",
+    "hint": "可选。与 Refresh Token 绑定的 x-jike-device-id（公开单集留空即可）"
   },
   "SUMMARY_ENABLED": {
     "description": "【AI 总结】启用 AI 总结",

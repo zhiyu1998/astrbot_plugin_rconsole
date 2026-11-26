@@ -29,6 +29,9 @@ wheels/
 AGENTS.md
 AGENTS.local.md
 
+# Local SFTP helper (含专用 SSH 私钥，不入库)
+.ftp/
+
 # Agent & local tool state
 .deja/
 

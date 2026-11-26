@@ -28,6 +28,7 @@ const SVG_ICONS = {
   cpu: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="16" x="4" y="4" rx="2"/><rect width="6" height="6" x="9" y="9" rx="1"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></svg>`,
   eye: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`,
   eyeOff: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/></svg>`,
+  podcast: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>`,
 };
 
 const GROUP_ICON_MAP = {
@@ -43,6 +44,9 @@ const GROUP_ICON_MAP = {
   微视: "film",
   YouTube: "play",
   微信视频号: "video",
+  网易云音乐: "music",
+  小宇宙: "podcast",
+  腾讯元宝: "sparkles",
   代理: "globe",
   下载: "download",
   下载与代理: "download",
@@ -792,6 +796,7 @@ async function loadStatus(probeProxy = false) {
     xhh_ck: "小黑盒 Cookie",
     wxchannel_cookie: "视频号元宝 Cookie",
     youtube_cookies: "YouTube cookies.txt",
+    xiaoyuzhou_token: "小宇宙 Token",
   };
   const secretEntries = Object.entries(secretNames);
   const secretsReady = secretEntries.filter(([k]) => Boolean(secrets[k])).length;

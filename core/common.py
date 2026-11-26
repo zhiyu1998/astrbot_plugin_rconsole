@@ -981,6 +981,29 @@ def _url_send_enabled(platform: str) -> bool:
     return any(token in plat for token in _VIDEO_URL_PLATFORMS)
 
 
+async def register_file_url(
+    path: str, *, event: Any = None, ttl: Optional[float] = None
+) -> Optional[str]:
+    """
+    把本地媒体注册到 AstrBot 文件服务，返回给 OneBot 协议端拉取的 HTTP URL。
+
+    复用 _VIDEO_URL_BASE 与 _VIDEO_URL_PLATFORMS：未配置或平台不命中时返回 None，
+    由调用方回退到 base64 或组件直发。
+    """
+    if not path or not os.path.exists(path):
+        return None
+    if not _url_send_enabled(_platform_of(event)):
+        return None
+    try:
+        token = await file_token_service.register_file(
+            path, timeout=ttl or _VIDEO_URL_TOKEN_TTL, single_use=False
+        )
+        return f"{_VIDEO_URL_BASE}/api/file/{token}"
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(f"[R插件] 注册文件服务 URL 失败：{exc}")
+        return None
+
+
 async def video_components(
     path: str, name: str = "", max_mb: int = 0, *, event: Any = None
 ) -> List[Any]:
