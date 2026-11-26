@@ -39,7 +39,9 @@ from ..constants.xiaoyuzhou import (
     APP_USER_AGENT,
     APP_VERSION,
     AUDIO_EXTENSIONS,
+    DEFAULT_AI_SUMMARY_MAX_DURATION,
     DEFAULT_COVER,
+    DEFAULT_STT_CHUNK_MB,
     EP_EPISODE_GET,
     EP_PODCAST_GET,
     EP_PRIVATE_MEDIA_GET,
@@ -169,10 +171,12 @@ class PodcastInfo:
 
 
 def send_mode_from_setting(value: Any) -> str:
-    """把配置项映射成内部模式标识：voice / file / card"""
+    """把配置项映射成内部模式标识：voice / file / card / none"""
     if isinstance(value, bool):
         return "voice" if value else "file"
     raw = str(value or "").strip().lower()
+    if raw in ("none", "off", "仅信息", "不发送", "关闭"):
+        return "none"
     if raw in ("card", "卡片", "音乐卡片"):
         return "card"
     if raw in ("file", "文件", "群文件"):
@@ -958,15 +962,21 @@ async def _deliver_via_component(
     ext: str,
     display_name: str,
     send_mode: str,
-) -> Any:
+    *,
+    keep_file: bool = False,
+) -> Tuple[Any, str]:
     """
     非 OneBot 平台（Telegram / QQ 官方 / Discord 等）走 AstrBot 消息组件。
+
+    返回 `(result, active_path)`；当 `keep_file=True` 时不提前调用 `release_file`，
+    由调用方在后续处理完成后统一释放。
     """
     try:
         size_bytes = os.path.getsize(path)
     except OSError:
-        release_file(path, 10.0)
-        return event.plain_result("音频文件读取失败，请稍后重试")
+        if not keep_file:
+            release_file(path, 10.0)
+        return event.plain_result("音频文件读取失败，请稍后重试"), ""
 
     size_mb = size_bytes / 1024 / 1024
     platform = _platform_name(event)
@@ -978,18 +988,27 @@ async def _deliver_via_component(
         chunk_min = limits["chunk_min"]
         base64_max = limits["base64_max"]
         if size_mb > hard_mb:
-            release_file(path, 10.0)
-            return event.plain_result(
-                f"音频 {size_mb:.1f}MB 超过 QQ 官方机器人文件硬限 {hard_mb}MB，无法发送。"
+            if not keep_file:
+                release_file(path, 10.0)
+            return (
+                event.plain_result(
+                    f"音频 {size_mb:.1f}MB 超过 QQ 官方机器人文件硬限 {hard_mb}MB，无法发送。"
+                ),
+                path,
             )
         if base64_max < size_mb <= chunk_min:
-            release_file(path, 10.0)
-            return event.plain_result(
-                f"该音频 {size_mb:.1f}MB 处于官方机器人 {base64_max}~{chunk_min}MB 不可发送区间："
-                f"适配器仅在超过 {chunk_min}MB 时分片上传，而平台 file_data 上限为 {base64_max}MB。已跳过。"
+            if not keep_file:
+                release_file(path, 10.0)
+            return (
+                event.plain_result(
+                    f"该音频 {size_mb:.1f}MB 处于官方机器人 {base64_max}~{chunk_min}MB 不可发送区间："
+                    f"适配器仅在超过 {chunk_min}MB 时分片上传，而平台 file_data 上限为 {base64_max}MB。已跳过。"
+                ),
+                path,
             )
-        release_file(path, 300.0)
-        return event.chain_result([Comp.File(name=display_name, file=os.path.abspath(path))])
+        if not keep_file:
+            release_file(path, 300.0)
+        return event.chain_result([Comp.File(name=display_name, file=os.path.abspath(path))]), path
 
     # Telegram 等：只有 ≤1MB 才走 Record，否则改发 File（send_document），防止 413 Request Entity Too Large
     if send_mode == "voice" and size_bytes <= VOICE_MAX_MB_NON_ONEBOT * 1024 * 1024:
@@ -1004,23 +1023,26 @@ async def _deliver_via_component(
             except OSError:
                 voice_size = 0
             if voice_size and voice_size <= VOICE_MAX_MB_NON_ONEBOT * 1024 * 1024:
-                release_file(voice_path, 180.0)
-                return event.chain_result([Comp.Record(file=voice_path)])
+                if not keep_file:
+                    release_file(voice_path, 180.0)
+                return event.chain_result([Comp.Record(file=voice_path)]), voice_path
             # 转码后超出 1MB：原文件已被 convert_audio_to_mp3 删除，直接用转码产物改发文件
-            release_file(voice_path, 300.0)
+            if not keep_file:
+                release_file(voice_path, 300.0)
             mp3_name = os.path.splitext(display_name)[0] + ".mp3"
-            return event.chain_result([Comp.File(file=voice_path, name=mp3_name)])
+            return event.chain_result([Comp.File(file=voice_path, name=mp3_name)]), voice_path
 
     if send_mode == "voice":
         logger.info(
             f"[R插件][小宇宙] 当前平台语音限制或音频较大（{size_mb:.1f}MB），改发文件：{display_name}"
         )
 
-    release_file(path, 300.0)
-    return event.chain_result([Comp.File(file=path, name=display_name)])
+    if not keep_file:
+        release_file(path, 300.0)
+    return event.chain_result([Comp.File(file=path, name=display_name)]), path
 
 
-async def _send_audio(
+async def _send_audio_ex(
     event: AstrMessageEvent,
     path: str,
     ext: str,
@@ -1029,11 +1051,19 @@ async def _send_audio(
     display_name: str,
     ep: EpisodeInfo,
     source_url: str,
-) -> Any:
-    """发送小宇宙单集音频，按平台能力分流并在失败时自动降级"""
+    keep_file: bool = False,
+) -> Tuple[Any, str, bool]:
+    """
+    发送小宇宙单集音频，按平台能力分流并在失败时自动降级。
+
+    返回 `(result, active_path, used_url)`；`keep_file=True` 时暂不清理 `active_path`。
+    """
     api = _onebot_api(event)
     if api is None:
-        return await _deliver_via_component(event, path, ext, display_name, send_mode)
+        result, active_path = await _deliver_via_component(
+            event, path, ext, display_name, send_mode, keep_file=keep_file
+        )
+        return result, active_path, False
 
     current_path = path
     current_ext = ext
@@ -1042,8 +1072,9 @@ async def _send_audio(
     if send_mode == "card":
         pushed, card_err = await _push_card(event, ep, source_url)
         if pushed:
-            release_file(current_path, 10.0)
-            return None
+            if not keep_file:
+                release_file(current_path, 10.0)
+            return None, current_path, False
         logger.warning(f"[R插件][小宇宙] 卡片发送失败，回退语音：{card_err}")
         send_mode = "voice"
 
@@ -1064,27 +1095,34 @@ async def _send_audio(
         if voice_ready:
             pushed, voice_err, used_url = await _push_voice(event, voice_ready)
             if pushed:
-                if used_url:
-                    release_video(voice_ready)
-                else:
-                    release_file(voice_ready, 10.0)
-                return None
+                if not keep_file:
+                    if used_url:
+                        release_video(voice_ready)
+                    else:
+                        release_file(voice_ready, 10.0)
+                return None, voice_ready, used_url
             logger.warning(f"[R插件][小宇宙] 语音发送失败（{voice_err}），自动降级为文件")
 
         pushed, file_err, used_url = await _push_file(
             event, current_path, current_name, source_url=source_url
         )
         if pushed:
-            if used_url:
-                release_video(current_path)
-            else:
-                release_file(current_path, 10.0)
-            return None
+            if not keep_file:
+                if used_url:
+                    release_video(current_path)
+                else:
+                    release_file(current_path, 10.0)
+            return None, current_path, used_url
 
-        release_file(current_path, 10.0)
-        return event.plain_result(
-            f"小宇宙音频发送失败（{file_err}）。\n"
-            "可以在 Web 面板调高「音频体积上限」、配置「视频直发文件服务地址（VIDEO_URL_BASE）」，或将发送方式改为「卡片」。"
+        if not keep_file:
+            release_file(current_path, 10.0)
+        return (
+            event.plain_result(
+                f"小宇宙音频发送失败（{file_err}）。\n"
+                "可以在 Web 面板调高「音频体积上限」、配置「视频直发文件服务地址（VIDEO_URL_BASE）」，或将发送方式改为「卡片」。"
+            ),
+            current_path,
+            False,
         )
 
     # send_mode == "file"
@@ -1092,11 +1130,12 @@ async def _send_audio(
         event, current_path, current_name, source_url=source_url
     )
     if pushed:
-        if used_url:
-            release_video(current_path)
-        else:
-            release_file(current_path, 10.0)
-        return None
+        if not keep_file:
+            if used_url:
+                release_video(current_path)
+            else:
+                release_file(current_path, 10.0)
+        return None, current_path, used_url
 
     # 主动选文件失败时，再试一次转码发语音
     logger.warning(f"[R插件][小宇宙] 文件上传失败（{file_err}），尝试回退语音")
@@ -1108,17 +1147,46 @@ async def _send_audio(
     if current_path.lower().endswith(".mp3"):
         pushed, _voice_err, used_url = await _push_voice(event, current_path)
         if pushed:
-            if used_url:
-                release_video(current_path)
-            else:
-                release_file(current_path, 10.0)
-            return None
+            if not keep_file:
+                if used_url:
+                    release_video(current_path)
+                else:
+                    release_file(current_path, 10.0)
+            return None, current_path, used_url
 
-    release_file(current_path, 10.0)
-    return event.plain_result(
-        f"音频文件发送失败（{file_err}）。\n"
-        "可以在 Web 面板把「发送方式」改成「卡片」或配置「视频直发文件服务地址（VIDEO_URL_BASE）」。"
+    if not keep_file:
+        release_file(current_path, 10.0)
+    return (
+        event.plain_result(
+            f"音频文件发送失败（{file_err}）。\n"
+            "可以在 Web 面板把「发送方式」改成「卡片」或配置「视频直发文件服务地址（VIDEO_URL_BASE）」。"
+        ),
+        current_path,
+        False,
     )
+
+
+async def _send_audio(
+    event: AstrMessageEvent,
+    path: str,
+    ext: str,
+    *,
+    send_mode: str,
+    display_name: str,
+    ep: EpisodeInfo,
+    source_url: str,
+) -> Any:
+    result, _active_path, _used_url = await _send_audio_ex(
+        event,
+        path,
+        ext,
+        send_mode=send_mode,
+        display_name=display_name,
+        ep=ep,
+        source_url=source_url,
+        keep_file=False,
+    )
+    return result
 
 
 # ------------------------------------------------------------------ 编排入口
@@ -1138,6 +1206,14 @@ async def process_xiaoyuzhou_url(
     access_token: str = "",
     refresh_token: str = "",
     device_id: str = "",
+    context: Any = None,
+    ai_summary_enabled: bool = False,
+    stt_provider_id: str = "",
+    ai_summary_provider_id: str = "",
+    stt_chunk_mb: float = DEFAULT_STT_CHUNK_MB,
+    ai_summary_max_duration: int = DEFAULT_AI_SUMMARY_MAX_DURATION,
+    ai_summary_use_forward: bool = True,
+    ai_summary_prompt: str = "",
 ) -> AsyncGenerator[Any, None]:
     """小宇宙链接解析入口（单集 / 播客 / 短链）"""
     text = get_message_text(event)
@@ -1214,6 +1290,7 @@ async def process_xiaoyuzhou_url(
 
     # 发送模式归一化
     mode = send_mode_from_setting(send_mode)
+    want_summary = bool(ai_summary_enabled and context is not None)
 
     # 如果体积未知，提前 HEAD 探测一下，既能展示体积，也能在下载前拦截超大音频
     if ep.audio_url and ep.size_bytes <= 0:
@@ -1227,9 +1304,10 @@ async def process_xiaoyuzhou_url(
         intro_len_limit=intro_len_limit,
     )
 
-    # 时长限制检查（0 或负数代表不限制；卡片模式不下载，直接继续发卡）
+    # 时长限制检查（0 或负数代表不限制；卡片/仅信息模式不下载，直接继续）
     dur_limit = _as_int(duration_limit)
-    if mode != "card" and dur_limit > 0 and ep.duration > dur_limit:
+    skip_chat_audio = False
+    if mode not in ("card", "none") and dur_limit > 0 and ep.duration > dur_limit:
         yield await cover_text_result(
             event,
             ep.cover if display_cover else "",
@@ -1237,15 +1315,17 @@ async def process_xiaoyuzhou_url(
             referer=XIAOYUZHOU_REFERER,
             prefix="xyz_cover",
         )
-        return
-
-    yield await cover_text_result(
-        event,
-        ep.cover if display_cover else "",
-        info_text,
-        referer=XIAOYUZHOU_REFERER,
-        prefix="xyz_cover",
-    )
+        if not want_summary:
+            return
+        skip_chat_audio = True
+    else:
+        yield await cover_text_result(
+            event,
+            ep.cover if display_cover else "",
+            info_text,
+            referer=XIAOYUZHOU_REFERER,
+            prefix="xyz_cover",
+        )
 
     if ep.is_private and not ep.audio_url:
         yield event.plain_result(
@@ -1257,63 +1337,138 @@ async def process_xiaoyuzhou_url(
         yield event.plain_result("未获取到小宇宙音频直链，可能是付费单集或已下架")
         return
 
-    # 卡片模式：无需下载整期音频，直接发送自定义音乐卡片
-    api = _onebot_api(event)
-    if mode == "card" and api is not None:
-        pushed, card_err = await _push_card(event, ep, ep.audio_url)
-        if pushed:
-            return
-        logger.warning(f"[R插件][小宇宙] 卡片发送失败（{card_err}），改用下载后发语音")
-        mode = "voice"
-
-    # 体积上限检查（0 或负数代表不限制）
-    max_mb = _as_int(audio_max_mb)
-    max_bytes = max(0, max_mb) * 1024 * 1024
-    if max_bytes and ep.size_bytes > max_bytes:
-        yield event.plain_result(
-            f"音频 {format_size(ep.size_bytes)} 超过上限 {max_mb}MB，未下载。\n"
-            "可以在 Web 面板调高「小宇宙音频体积上限」（填 0 不限制），或将「发送方式」改为「卡片」。"
-        )
-        return
-
     ext = _infer_audio_ext(ep.audio_url, ep.mime_type)
-    path = await download_file(
-        ep.audio_url,
-        build_temp_path("xiaoyuzhou", f".{ext}"),
-        headers={"Referer": XIAOYUZHOU_REFERER, "User-Agent": COMMON_USER_AGENT},
-        referer=XIAOYUZHOU_REFERER,
-        timeout=300,
-    )
-    if not path:
-        yield event.plain_result("小宇宙音频下载失败，请稍后重试")
+    api = _onebot_api(event)
+    chat_audio_path = ""
+    chat_used_url = False
+
+    # ---------------- 聊天音频发送阶段 ----------------
+    if not skip_chat_audio and mode != "none":
+        card_sent = False
+        if mode == "card" and api is not None:
+            pushed, card_err = await _push_card(event, ep, ep.audio_url)
+            if pushed:
+                card_sent = True
+            else:
+                logger.warning(f"[R插件][小宇宙] 卡片发送失败（{card_err}），改用下载后发语音")
+                mode = "voice"
+
+        if not card_sent:
+            max_mb = _as_int(audio_max_mb)
+            max_bytes = max(0, max_mb) * 1024 * 1024
+            if max_bytes and ep.size_bytes > max_bytes:
+                yield event.plain_result(
+                    f"音频 {format_size(ep.size_bytes)} 超过上限 {max_mb}MB，未下载。\n"
+                    "可以在 Web 面板调高「小宇宙音频体积上限」（填 0 不限制），或将「发送方式」改为「卡片」。"
+                )
+            else:
+                downloaded = await download_file(
+                    ep.audio_url,
+                    build_temp_path("xiaoyuzhou", f".{ext}"),
+                    headers={"Referer": XIAOYUZHOU_REFERER, "User-Agent": COMMON_USER_AGENT},
+                    referer=XIAOYUZHOU_REFERER,
+                    timeout=300,
+                )
+                if not downloaded:
+                    yield event.plain_result("小宇宙音频下载失败，请稍后重试")
+                else:
+                    try:
+                        actual_size = os.path.getsize(downloaded)
+                    except OSError:
+                        actual_size = 0
+                    if max_bytes and actual_size > max_bytes:
+                        # 仅当不开 AI 总结时立刻删掉；若开了 AI 总结且时长合规，可留作总结复用
+                        if want_summary and (
+                            _as_int(ai_summary_max_duration) <= 0
+                            or ep.duration <= _as_int(ai_summary_max_duration)
+                        ):
+                            chat_audio_path = downloaded
+                        else:
+                            delete_file(downloaded)
+                        yield event.plain_result(
+                            f"音频 {format_size(actual_size)} 超过上限 {max_mb}MB，已跳过发送。\n"
+                            "可以在 Web 面板调高「小宇宙音频体积上限」（填 0 不限制），或将「发送方式」改为「卡片」。"
+                        )
+                    else:
+                        base_name = safe_filename(
+                            f"{ep.podcast_title}-{ep.title}"
+                            if ep.podcast_title and ep.title
+                            else (ep.title or ep.eid),
+                            default="xiaoyuzhou",
+                        )
+                        display_name = f"{base_name}.{ext}"
+                        result, active_path, used_url = await _send_audio_ex(
+                            event,
+                            downloaded,
+                            ext,
+                            send_mode=mode,
+                            display_name=display_name,
+                            ep=ep,
+                            source_url=ep.audio_url,
+                            keep_file=want_summary,
+                        )
+                        if result is not None:
+                            yield result
+                        if want_summary and active_path and os.path.exists(active_path):
+                            chat_audio_path = active_path
+                            chat_used_url = used_url
+
+    # ---------------- 音频 AI 总结阶段 ----------------
+    if not want_summary:
         return
 
-    # 预检未拿到大小时，落盘后复检真实体积
+    from .xiaoyuzhou_summary import process_xiaoyuzhou_summary
+
+    summary_only_path = ""
     try:
-        actual_size = os.path.getsize(path)
-    except OSError:
-        actual_size = 0
-    if max_bytes and actual_size > max_bytes:
-        delete_file(path)
-        yield event.plain_result(
-            f"音频 {format_size(actual_size)} 超过上限 {max_mb}MB，已跳过发送。\n"
-            "可以在 Web 面板调高「小宇宙音频体积上限」（填 0 不限制），或将「发送方式」改为「卡片」。"
-        )
-        return
+        summary_dur_limit = _as_int(ai_summary_max_duration)
+        if summary_dur_limit > 0 and ep.duration > summary_dur_limit:
+            yield event.plain_result(
+                f"{identify_prefix}小宇宙 AI 总结跳过：单集时长 {ep.duration // 60} 分钟，"
+                f"超过总结上限 {summary_dur_limit // 60} 分钟。"
+            )
+            return
 
-    base_name = safe_filename(
-        f"{ep.podcast_title}-{ep.title}" if ep.podcast_title and ep.title else (ep.title or ep.eid),
-        default="xiaoyuzhou",
-    )
-    display_name = f"{base_name}.{ext}"
-    result = await _send_audio(
-        event,
-        path,
-        ext,
-        send_mode=mode,
-        display_name=display_name,
-        ep=ep,
-        source_url=ep.audio_url,
-    )
-    if result is not None:
-        yield result
+        audio_for_summary = chat_audio_path
+        if not audio_for_summary or not os.path.exists(audio_for_summary):
+            summary_only_path = (
+                await download_file(
+                    ep.audio_url,
+                    build_temp_path("xyz_sum", f".{ext}"),
+                    headers={"Referer": XIAOYUZHOU_REFERER, "User-Agent": COMMON_USER_AGENT},
+                    referer=XIAOYUZHOU_REFERER,
+                    timeout=300,
+                )
+                or ""
+            )
+            if not summary_only_path:
+                yield event.plain_result(
+                    f"{identify_prefix}小宇宙 AI 总结失败：音频下载失败，请稍后重试"
+                )
+                return
+            audio_for_summary = summary_only_path
+
+        async for msg in process_xiaoyuzhou_summary(
+            context,
+            event,
+            ep,
+            audio_for_summary,
+            identify_prefix=identify_prefix,
+            stt_provider_id=stt_provider_id,
+            chat_provider_id=ai_summary_provider_id,
+            chunk_mb=stt_chunk_mb,
+            max_duration=ai_summary_max_duration,
+            use_forward=ai_summary_use_forward,
+            system_prompt=ai_summary_prompt,
+        ):
+            yield msg
+    finally:
+        if summary_only_path:
+            delete_file(summary_only_path)
+        if chat_audio_path and os.path.exists(chat_audio_path):
+            if chat_used_url:
+                release_video(chat_audio_path)
+            elif api is None:
+                release_file(chat_audio_path, 300.0)
+            else:
+                release_file(chat_audio_path, 10.0)

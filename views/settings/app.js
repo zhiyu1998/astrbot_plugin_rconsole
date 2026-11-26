@@ -66,6 +66,8 @@ const state = {
   edited: new Set(),
   providers: [],
   providersLoaded: false,
+  sttProviders: [],
+  sttProvidersLoaded: false,
   platforms: [],
   platformBusy: new Set(),
 };
@@ -387,7 +389,11 @@ function renderField(field) {
     box.appendChild(area);
     box.appendChild(meta);
     control.appendChild(box);
-  } else if (field.dynamic_options === "providers") {
+  } else if (
+    field.dynamic_options === "providers" ||
+    field.dynamic_options === "stt_providers"
+  ) {
+    const isStt = field.dynamic_options === "stt_providers";
     const row = document.createElement("div");
     row.className = "dyn-row";
     const select = document.createElement("select");
@@ -396,9 +402,12 @@ function renderField(field) {
       select.innerHTML = "";
       const blank = document.createElement("option");
       blank.value = "";
-      blank.textContent = "（跟随当前会话默认模型）";
+      blank.textContent = isStt
+        ? "（跟随 AstrBot 默认语音转文字模型）"
+        : "（跟随当前会话默认模型）";
       select.appendChild(blank);
-      const list = state.providers.slice();
+      const source = isStt ? state.sttProviders : state.providers;
+      const list = source.slice();
       if (cur && !list.some((p) => p.id === cur)) {
         list.unshift({ id: cur, label: `${cur}（不在当前列表）` });
       }
@@ -418,14 +427,16 @@ function renderField(field) {
     btn.type = "button";
     btn.className = "mini-btn";
     btn.textContent = "刷新";
-    btn.title = "重新从 AstrBot 读取模型列表";
+    btn.title = isStt ? "重新从 AstrBot 读取语音转文字模型列表" : "重新从 AstrBot 读取模型列表";
     btn.addEventListener("click", async () => {
       btn.disabled = true;
       btn.textContent = "刷新中…";
       try {
-        await loadProviders(true);
+        const latest = isStt ? await loadSttProviders(true) : await loadProviders(true);
         fill();
-        toast(`已刷新，共 ${state.providers.length} 个模型`);
+        toast(
+          `已刷新，共 ${latest.length} 个${isStt ? "语音转文字模型" : "模型"}`
+        );
       } catch (err) {
         toast(`刷新失败：${err.message}`, true);
       } finally {
@@ -729,13 +740,31 @@ async function loadProviders(force = false) {
   return state.providers;
 }
 
+async function loadSttProviders(force = false) {
+  if (state.sttProvidersLoaded && !force) return state.sttProviders;
+  try {
+    const data = await bridge.apiGet("view/stt_providers");
+    state.sttProviders = (data && data.items) || [];
+    state.sttProvidersLoaded = true;
+  } catch (err) {
+    state.sttProviders = [];
+  }
+  return state.sttProviders;
+}
+
 async function loadSchema() {
   const data = await bridge.apiGet("view/schema");
   state.groups = data.groups || [];
   state.providersLoaded = false;
-  if (state.groups.some((group) => group.fields.some((field) => field.dynamic_options))) {
-    await loadProviders(true);
+  state.sttProvidersLoaded = false;
+  const tasks = [];
+  if (state.groups.some((group) => group.fields.some((field) => field.dynamic_options === "providers"))) {
+    tasks.push(loadProviders(true));
   }
+  if (state.groups.some((group) => group.fields.some((field) => field.dynamic_options === "stt_providers"))) {
+    tasks.push(loadSttProviders(true));
+  }
+  if (tasks.length) await Promise.all(tasks);
   if (data.version) $("#versionTag").textContent = `v${data.version}`;
   if (!state.active || !state.groups.some((group) => group.name === state.active)) {
     const preferred = state.groups.find((group) => group.name === "全局");

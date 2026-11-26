@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import re
@@ -50,6 +51,8 @@ _TRUE = {"true", "1", "on", "yes", "是"}
 # 值需要从 AstrBot 运行时动态拉取的字段：key -> 数据源名
 DYNAMIC_OPTION_FIELDS = {
     "SUMMARY_PROVIDER_ID": "providers",
+    "XIAOYUZHOU_AI_SUMMARY_PROVIDER_ID": "providers",
+    "XIAOYUZHOU_STT_PROVIDER_ID": "stt_providers",
 }
 
 
@@ -407,6 +410,62 @@ def register_view_apis(context, plugin, plugin_name: str) -> None:
 
         return json_response({"items": items, "default": default_id})
 
+    async def page_stt_providers():
+        """列出 AstrBot 当前可用的语音转文字（STT）Provider，供下拉框直接选择"""
+        items: List[Dict[str, Any]] = []
+
+        default_id = ""
+        for attr in ("get_using_stt_provider_async", "get_using_stt_provider"):
+            fn = getattr(context, attr, None)
+            if not callable(fn):
+                continue
+            try:
+                using = fn()
+                if inspect.isawaitable(using):
+                    using = await using
+                if using is not None:
+                    meta = using.meta()
+                    default_id = str(getattr(meta, "id", "") or "").strip()
+                    break
+            except Exception:  # noqa: BLE001
+                default_id = ""
+
+        try:
+            providers = context.get_all_stt_providers() or []
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"[R插件] 读取 STT Provider 列表失败: {exc}")
+            providers = []
+
+        for provider in providers:
+            cfg = getattr(provider, "provider_config", None)
+            cfg = cfg if isinstance(cfg, dict) else {}
+            pid = str(cfg.get("id") or "").strip()
+            model = str(cfg.get("model") or "").strip()
+            ptype = str(cfg.get("type") or "").strip()
+            try:
+                meta = provider.meta()
+                pid = str(getattr(meta, "id", "") or pid).strip()
+                model = str(getattr(meta, "model", "") or model).strip()
+                ptype = str(getattr(meta, "type", "") or ptype).strip()
+            except Exception:  # noqa: BLE001
+                pass
+            if not pid:
+                continue
+            label = f"{model or pid} · {pid}"
+            if ptype:
+                label = f"{label} 〔{ptype}〕"
+            items.append(
+                {
+                    "id": pid,
+                    "label": label,
+                    "model": model,
+                    "type": ptype,
+                    "is_default": pid == default_id,
+                }
+            )
+
+        return json_response({"items": items, "default": default_id})
+
     async def page_probe():
         from .common import proxy_for, temp_dir
         from .youtube import check_proxy
@@ -513,4 +572,10 @@ def register_view_apis(context, plugin, plugin_name: str) -> None:
     )
     context.register_web_api(
         f"/{plugin_name}/view/providers", page_providers, ["GET"], "R插件可用模型列表"
+    )
+    context.register_web_api(
+        f"/{plugin_name}/view/stt_providers",
+        page_stt_providers,
+        ["GET"],
+        "R插件可用语音转文字模型列表",
     )

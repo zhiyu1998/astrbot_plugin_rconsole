@@ -291,6 +291,21 @@ class RPlugin(Star):
         self.xiaoyuzhou_access_token = str(self._cfg("XIAOYUZHOU_ACCESS_TOKEN", "") or "").strip()
         self.xiaoyuzhou_refresh_token = str(self._cfg("XIAOYUZHOU_REFRESH_TOKEN", "") or "").strip()
         self.xiaoyuzhou_device_id = str(self._cfg("XIAOYUZHOU_DEVICE_ID", "") or "").strip()
+        self.xiaoyuzhou_ai_summary_enabled = bool(self._cfg("XIAOYUZHOU_AI_SUMMARY_ENABLED", False))
+        self.xiaoyuzhou_stt_provider_id = str(
+            self._cfg("XIAOYUZHOU_STT_PROVIDER_ID", "") or ""
+        ).strip()
+        self.xiaoyuzhou_ai_summary_provider_id = str(
+            self._cfg("XIAOYUZHOU_AI_SUMMARY_PROVIDER_ID", "") or ""
+        ).strip()
+        self.xiaoyuzhou_stt_chunk_mb = self._float_cfg("XIAOYUZHOU_STT_CHUNK_MB", 8.0)
+        self.xiaoyuzhou_ai_summary_max_duration = self._int_cfg(
+            "XIAOYUZHOU_AI_SUMMARY_MAX_DURATION", 7200
+        )
+        self.xiaoyuzhou_ai_summary_use_forward = bool(
+            self._cfg("XIAOYUZHOU_AI_SUMMARY_USE_FORWARD", True)
+        )
+        self.xiaoyuzhou_ai_summary_prompt = str(self._cfg("XIAOYUZHOU_AI_SUMMARY_PROMPT", "") or "")
 
         self.youtube_cookies = set_cookie_file(str(self._cfg("YOUTUBE_COOKIES", "") or ""))
         if self.youtube_cookies:
@@ -335,6 +350,15 @@ class RPlugin(Star):
             return default
         try:
             return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    def _float_cfg(self, key: str, default: float) -> float:
+        value = self._cfg(key, default)
+        if value == "":
+            return default
+        try:
+            return float(value)
         except (TypeError, ValueError):
             return default
 
@@ -664,6 +688,14 @@ class RPlugin(Star):
             access_token=self.xiaoyuzhou_access_token,
             refresh_token=self.xiaoyuzhou_refresh_token,
             device_id=self.xiaoyuzhou_device_id,
+            context=self.context,
+            ai_summary_enabled=self.xiaoyuzhou_ai_summary_enabled,
+            stt_provider_id=self.xiaoyuzhou_stt_provider_id,
+            ai_summary_provider_id=self.xiaoyuzhou_ai_summary_provider_id,
+            stt_chunk_mb=self.xiaoyuzhou_stt_chunk_mb,
+            ai_summary_max_duration=self.xiaoyuzhou_ai_summary_max_duration,
+            ai_summary_use_forward=self.xiaoyuzhou_ai_summary_use_forward,
+            ai_summary_prompt=self.xiaoyuzhou_ai_summary_prompt,
         ):
             yield result
 
