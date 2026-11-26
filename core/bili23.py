@@ -12,6 +12,7 @@ import httpx
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 from bilibili_api import video, Credential, live, article
+from bilibili_api.dynamic import Dynamic
 from bilibili_api.opus import Opus
 from bilibili_api.video import VideoDownloadURLDataDetecter
 
@@ -25,6 +26,7 @@ from .common import (
     download_stream_segment,
     effective_video_limit_mb,
     fetch_json,
+    image_send_results,
     limit_notice,
     local_image,
     release_video,
@@ -577,6 +579,172 @@ def _pick_bili_target(text: str) -> str:
     return text
 
 
+_BILI_DYN_ID_RE = re.compile(r"(?:t\.bilibili\.com|/opus)/(\d+)")
+
+
+def _bili_img_url(url: str) -> str:
+    url = (url or "").strip()
+    if not url:
+        return ""
+    if url.startswith("//"):
+        return "https:" + url
+    if url.startswith("http://"):
+        return "https://" + url[len("http://") :]
+    return url
+
+
+def _dedupe_bili_imgs(urls: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in urls:
+        u = _bili_img_url(raw)
+        if u and u not in seen:
+            seen.add(u)
+            out.append(u)
+    return out
+
+
+def _collect_opus_words(obj) -> str:
+    parts: list[str] = []
+
+    def _walk(node) -> None:
+        if isinstance(node, list):
+            for item in node:
+                _walk(item)
+            return
+        if not isinstance(node, dict):
+            return
+        word = node.get("word")
+        if isinstance(word, dict) and isinstance(word.get("words"), str):
+            parts.append(word["words"])
+            return
+        rich = node.get("rich")
+        if isinstance(rich, dict) and isinstance(rich.get("text"), str):
+            parts.append(rich["text"])
+            return
+        for val in node.values():
+            _walk(val)
+
+    _walk(obj)
+    return "".join(parts)
+
+
+def _parse_opus_info(info: dict) -> dict:
+    item = (info or {}).get("item") or {}
+    modules = item.get("modules")
+    if not isinstance(modules, list):
+        return {"author": "", "title": "", "text": "", "pics": []}
+
+    author = ""
+    title = ""
+    paragraphs: list[str] = []
+    pics: list[str] = []
+
+    for mod in modules:
+        if not isinstance(mod, dict):
+            continue
+        mod_author = mod.get("module_author") or {}
+        if isinstance(mod_author, dict) and mod_author.get("name"):
+            author = str(mod_author["name"])
+        mod_title = mod.get("module_title") or {}
+        if isinstance(mod_title, dict) and mod_title.get("text"):
+            title = str(mod_title["text"])
+        mod_top = mod.get("module_top") or {}
+        album = (
+            ((mod_top.get("display") or {}).get("album") or {}) if isinstance(mod_top, dict) else {}
+        )
+        for pic in album.get("pics") or []:
+            if isinstance(pic, dict) and pic.get("url"):
+                pics.append(str(pic["url"]))
+        mod_content = mod.get("module_content") or {}
+        if not isinstance(mod_content, dict):
+            continue
+        for para in mod_content.get("paragraphs") or []:
+            if not isinstance(para, dict):
+                continue
+            pic_pics = (para.get("pic") or {}).get("pics")
+            if isinstance(pic_pics, list):
+                for pic in pic_pics:
+                    if isinstance(pic, dict) and pic.get("url"):
+                        pics.append(str(pic["url"]))
+                continue
+            code_content = (para.get("code") or {}).get("content")
+            if isinstance(code_content, str):
+                if code_content.strip():
+                    paragraphs.append(code_content.strip())
+                continue
+            para_text = _collect_opus_words(para).strip()
+            if para_text:
+                paragraphs.append(para_text)
+
+    return {
+        "author": author,
+        "title": title,
+        "text": "\n".join(paragraphs),
+        "pics": _dedupe_bili_imgs(pics),
+    }
+
+
+def _parse_dynamic_info(info: dict) -> dict:
+    item = (info or {}).get("item") or {}
+    modules = item.get("modules")
+    if not isinstance(modules, dict):
+        return {"author": "", "title": "", "text": "", "pics": []}
+
+    mod_author = modules.get("module_author") or {}
+    author = str(mod_author.get("name") or "") if isinstance(mod_author, dict) else ""
+
+    dyn = modules.get("module_dynamic") or {}
+    if not isinstance(dyn, dict):
+        dyn = {}
+    major = dyn.get("major") or {}
+    if not isinstance(major, dict):
+        major = {}
+    opus = major.get("opus") or {}
+    draw = major.get("draw") or {}
+    archive = major.get("archive") or {}
+    article_mod = major.get("article") or {}
+
+    desc_text = ((dyn.get("desc") or {}).get("text")) or ""
+    opus_text = ((opus.get("summary") or {}).get("text")) if isinstance(opus, dict) else ""
+    text = str(desc_text or opus_text or "").strip()
+
+    title = ""
+    for src in (opus, archive, article_mod):
+        if isinstance(src, dict) and src.get("title"):
+            title = str(src["title"]).strip()
+            break
+
+    pics: list[str] = []
+    if isinstance(opus, dict):
+        for pic in opus.get("pics") or []:
+            if isinstance(pic, dict) and pic.get("url"):
+                pics.append(str(pic["url"]))
+    if isinstance(draw, dict):
+        for pic in draw.get("items") or []:
+            if isinstance(pic, dict) and pic.get("src"):
+                pics.append(str(pic["src"]))
+
+    if item.get("type") == "DYNAMIC_TYPE_FORWARD" and isinstance(item.get("orig"), dict):
+        orig = _parse_dynamic_info({"item": item["orig"]})
+        orig_head = f"// 转发自 @{orig['author'] or '未知UP主'}"
+        if orig["title"]:
+            orig_head += f"：{orig['title']}"
+        orig_parts = [orig_head]
+        if orig["text"]:
+            orig_parts.append(orig["text"])
+        orig_block = "\n".join(orig_parts)
+        text = f"{text}\n\n{orig_block}".strip() if text else orig_block
+        pics.extend(orig["pics"])
+
+    return {
+        "author": author,
+        "title": title,
+        "text": text,
+        "pics": _dedupe_bili_imgs(pics),
+    }
+
+
 async def process_bilibili_url(
     event: AstrMessageEvent,
     credential: Credential,
@@ -633,87 +801,62 @@ async def process_bilibili_url(
     # ================== 动态解析 ==================
     if ("t.bilibili.com" in url or "/opus/" in url) and credential:
         try:
-            if "?" in url:
-                url = url[: url.index("?")]
-            dynamic_match = re.search(r"[^/]+(?!.*/)", url)
-            if not dynamic_match:
+            dyn_match = _BILI_DYN_ID_RE.search(url)
+            if not dyn_match:
                 yield event.plain_result("无法识别动态ID。")
                 return
-            dynamic_id = int(dynamic_match.group(0))
-            opus = Opus(dynamic_id, credential)
-            # Opus.get_content() might not be available, using get_opus_info() instead
-            # Since get_opus_info() might not be available either, fallback to a more basic approach
+            dynamic_id = int(dyn_match.group(1))
+            parsed = None
             try:
-                dynamic_info = await opus.get_info()
-            except AttributeError:
-                # If get_info() is not available, use a basic dictionary
-                dynamic_info = {}
+                parsed = _parse_opus_info(await Opus(dynamic_id, credential).get_info())
+            except Exception as e:
+                logger.info(f"[R插件] B站动态 opus 接口失败，改走 dynamic 接口: {e}")
 
-            # 提取内容
-            desc = ""
-            user_name = "未知UP主"
-
-            # 尝试不同的数据结构格式获取内容
-            if (
-                "desc" in dynamic_info
-                and isinstance(dynamic_info["desc"], dict)
-                and "text" in dynamic_info["desc"]
+            if parsed is None or (
+                not parsed["text"] and not parsed["title"] and not parsed["pics"]
             ):
-                desc = dynamic_info["desc"]["text"]
-            elif (
-                "item" in dynamic_info
-                and isinstance(dynamic_info["item"], dict)
-                and "description" in dynamic_info["item"]
-            ):
-                desc = dynamic_info["item"]["description"]
+                parsed = _parse_dynamic_info(await Dynamic(dynamic_id, credential).get_info())
 
             if (
-                "user" in dynamic_info
-                and isinstance(dynamic_info["user"], dict)
-                and "name" in dynamic_info["user"]
+                not parsed["author"]
+                and not parsed["text"]
+                and not parsed["title"]
+                and not parsed["pics"]
             ):
-                user_name = dynamic_info["user"]["name"]
-            elif (
-                "card" in dynamic_info
-                and isinstance(dynamic_info["card"], dict)
-                and "card" in dynamic_info["card"]
-            ):
-                card = dynamic_info["card"]["card"]
-                if (
-                    isinstance(card, dict)
-                    and "user" in card
-                    and isinstance(card["user"], dict)
-                    and "name" in card["user"]
-                ):
-                    user_name = card["user"]["name"]
+                yield event.plain_result("B站动态解析失败：接口未返回内容")
+                return
 
-            # 提取图片
-            pics = []
-            if isinstance(dynamic_info, dict):
-                # 尝试不同的数据结构格式获取图片
-                if "pictures" in dynamic_info and isinstance(dynamic_info["pictures"], list):
-                    for p in dynamic_info["pictures"]:
-                        if isinstance(p, dict) and "img_src" in p:
-                            pics.append(p["img_src"])
-                elif (
-                    "item" in dynamic_info
-                    and isinstance(dynamic_info["item"], dict)
-                    and "pictures" in dynamic_info["item"]
-                ):
-                    for p in dynamic_info["item"]["pictures"]:
-                        if isinstance(p, dict) and "img_src" in p:
-                            pics.append(p["img_src"])
+            lines = [f"{identify_prefix}哔哩哔哩动态 - {parsed['author'] or '未知UP主'}"]
+            if parsed["title"]:
+                lines.append(parsed["title"])
+            if parsed["text"]:
+                lines.append(truncate_str(parsed["text"], 1000))
+            msg = strip_route_links("\n".join(lines))
 
-            message_chain = [Comp.Plain(f"识别到B站动态 (来自: {user_name}):\n{desc}")]
-            if pics:
-                message_chain.append(Comp.Plain("\n附带图片如下："))
-                for pic_url in pics[:9]:  # 最多发9张图
-                    message_chain.append(Comp.Image.fromURL(pic_url))
+            raw_pics = parsed["pics"][:9]
+            comps = []
+            if raw_pics:
+                results = await asyncio.gather(
+                    *(
+                        local_image(u, referer="https://www.bilibili.com/", prefix="bili_dyn")
+                        for u in raw_pics
+                    )
+                )
+                comps = [c for c in results if c is not None]
+                failed = len(raw_pics) - len(comps)
+                if failed:
+                    logger.warning(f"[R插件] B站动态有 {failed}/{len(raw_pics)} 张图片下载失败")
 
-            yield event.chain_result(message_chain)
+            if len(comps) <= 1:
+                plain_text = f"{msg}\n" if comps else msg
+                yield event.chain_result([Comp.Plain(plain_text), *comps])
+            else:
+                yield event.plain_result(msg)
+                for r in image_send_results(event, comps):
+                    yield r
             return
         except Exception as e:
-            yield event.plain_result(f"B站动态解析失败: {e}")
+            yield event.plain_result(strip_route_links(f"B站动态解析失败: {e}"))
             return
     # ================== 直播间解析 ==================
     if "live.bilibili.com" in url:
