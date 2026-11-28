@@ -51,7 +51,7 @@ from .core.xiaoyuzhou import (
 )
 
 PLUGIN_NAME = "astrbot_plugin_rconsole"
-VERSION = "1.2.18"
+VERSION = "1.2.19"
 PLATFORM_ALIASES = {
     "douyin": "抖音",
     "bilibili": "哔哩哔哩",
@@ -98,7 +98,7 @@ BILIBILI_ROUTE_REGEX = (
     "RrOrange",
     "R插件迁移版：抖音/B站/快手/微博/AcFun/小红书/米游社/小黑盒/微视/YouTube/微信视频号 "
     "链接解析 + AI 总结（已适配 Telegram / QQ 官方机器人发送）",
-    "1.2.18",
+    "1.2.19",
 )
 class RPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -299,6 +299,7 @@ class RPlugin(Star):
             self._cfg("XIAOYUZHOU_AI_SUMMARY_PROVIDER_ID", "") or ""
         ).strip()
         self.xiaoyuzhou_stt_chunk_mb = self._float_cfg("XIAOYUZHOU_STT_CHUNK_MB", 8.0)
+        self.xiaoyuzhou_stt_concurrency = self._int_cfg("XIAOYUZHOU_STT_CONCURRENCY", 4)
         self.xiaoyuzhou_ai_summary_max_duration = self._int_cfg(
             "XIAOYUZHOU_AI_SUMMARY_MAX_DURATION", 7200
         )
@@ -693,6 +694,7 @@ class RPlugin(Star):
             stt_provider_id=self.xiaoyuzhou_stt_provider_id,
             ai_summary_provider_id=self.xiaoyuzhou_ai_summary_provider_id,
             stt_chunk_mb=self.xiaoyuzhou_stt_chunk_mb,
+            stt_concurrency=self.xiaoyuzhou_stt_concurrency,
             ai_summary_max_duration=self.xiaoyuzhou_ai_summary_max_duration,
             ai_summary_use_forward=self.xiaoyuzhou_ai_summary_use_forward,
             ai_summary_prompt=self.xiaoyuzhou_ai_summary_prompt,

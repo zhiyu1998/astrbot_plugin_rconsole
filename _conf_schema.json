@@ -564,6 +564,12 @@
     "default": 8.0,
     "hint": "单片 WAV 上传大小上限（保留 64KB 表单余量，限制在 1~25 MB）。Groq whisper-large-v3-turbo 超过 8MB 容易返回 502，保持默认 8.0 即可"
   },
+  "XIAOYUZHOU_STT_CONCURRENCY": {
+    "description": "【小宇宙】STT 分片转写并发数",
+    "type": "int",
+    "default": 4,
+    "hint": "同时上传识别的音频分片数量（范围 1~16，默认 4）。调高可明显提速；若遇到 API 429 限流可适当调低至 1~2"
+  },
   "XIAOYUZHOU_AI_SUMMARY_MAX_DURATION": {
     "description": "【小宇宙】AI 总结音频时长上限（秒）",
     "type": "int",

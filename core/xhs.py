@@ -4,10 +4,9 @@ import os
 import json
 import httpx
 import asyncio
-import aiohttp
 import time
 import random
-from typing import Any, Dict, List, AsyncGenerator, Optional
+from typing import Any, Dict, List, AsyncGenerator, Optional, Tuple
 from urllib.parse import urlparse, parse_qs
 
 import astrbot.api.message_components as Comp
@@ -17,14 +16,13 @@ from astrbot.api import logger
 from .common import (
     cache_dir,
     create_forward_message,
-    delete_boring_characters,
+    delete_file,
+    download_file,
     effective_video_limit_mb,
     image_send_results,
     local_image,
     release_file,
     release_video,
-    remove_files,
-    send_forward_message,
     single_result,
     truncate_str,
     video_components,
@@ -32,9 +30,14 @@ from .common import (
 
 # Constants
 XHS_REQ_LINK = "https://www.xiaohongshu.com/explore/"
+XHS_REFERER = "https://www.xiaohongshu.com/"
 XHS_DESC_LEN_LIMIT = 78
 COMMON_HEADER = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    )
 }
 
 
@@ -43,49 +46,56 @@ def _cache_dir() -> str:
     return cache_dir("xhs_cache")
 
 
-async def download_img(url: str, path: str, session: Optional[aiohttp.ClientSession] = None) -> str:
-    """
-    下载图片到指定路径
+def _is_valid_video_file(path: str) -> bool:
+    """校验下载落盘的是有效视频容器，避免 CDN 403 HTML/JSON 误当 MP4 发送"""
+    if not path or not os.path.exists(path):
+        return False
+    try:
+        if os.path.getsize(path) < 1024:
+            return False
+        with open(path, "rb") as fp:
+            head = fp.read(64)
+    except OSError:
+        return False
+    if head.lstrip().startswith((b"<", b"{", b"[")):
+        return False
+    return b"ftyp" in head[:64] or head.startswith((b"FLV", b"\x1a\x45\xdf\xa3"))
 
-    :param url: 图片链接
-    :param path: 保存路径
-    :param session: 可选的 aiohttp 会话
-    :return: 保存的文件路径
-    """
-    if session:
-        async with session.get(url) as response:
-            with open(path, "wb") as fd:
-                async for chunk in response.content.iter_chunked(1024):
-                    fd.write(chunk)
-    else:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
-                with open(path, "wb") as fd:
-                    async for chunk in response.content.iter_chunked(1024):
-                        fd.write(chunk)
-    return path
+
+async def download_img(url: str, path: str, session: Optional[Any] = None) -> str:
+    """下载图片到指定路径（统一带 Referer 与 UA，失败返回空串）"""
+    del session
+    saved = await download_file(
+        url,
+        path,
+        headers=COMMON_HEADER,
+        referer=XHS_REFERER,
+        threads=0,
+        timeout=60.0,
+    )
+    return saved or ""
 
 
 async def download_video(url: str) -> str:
-    """
-    下载视频到缓存路径
-
-    :param url: 视频链接
-    :return: 保存的文件路径
-    """
-    # 确保缓存目录存在
+    """下载视频到缓存路径并校验视频文件头，无效时清理并返回空串"""
     os.makedirs(_cache_dir(), exist_ok=True)
-
-    # 生成唯一文件名
     filename = f"xhs_video_{int(time.time())}_{random.randint(1000, 9999)}.mp4"
     path = os.path.join(_cache_dir(), filename)
-
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            with open(path, "wb") as fd:
-                async for chunk in response.content.iter_chunked(1024):
-                    fd.write(chunk)
-    return path
+    saved = await download_file(
+        url,
+        path,
+        headers=COMMON_HEADER,
+        referer=XHS_REFERER,
+        timeout=180.0,
+    )
+    if not saved:
+        return ""
+    if not _is_valid_video_file(saved):
+        size = os.path.getsize(saved) if os.path.exists(saved) else 0
+        logger.warning(f"[R插件][小红书] 下载的视频内容无效（size={size}），已清理: {url[:80]}")
+        delete_file(saved)
+        return ""
+    return saved
 
 
 def save_to_cache(note_id: str, data: Dict[str, Any]) -> None:
@@ -166,27 +176,47 @@ def _pick_image_url(img) -> str:
     return ""
 
 
-def _pick_video_url(note) -> str:
+def _pick_video_urls(note: Dict[str, Any]) -> List[str]:
+    """按优先级收集视频直链列表（直链 -> masterUrl -> backupUrls -> originVideoKey 兜底）"""
     video = note.get("video") or {}
     if not isinstance(video, dict):
-        return ""
-    direct = video.get("url")
-    if isinstance(direct, str) and direct.startswith("http"):
-        return direct
+        return []
+
+    urls: List[str] = []
+
+    def _add(candidate: Any) -> None:
+        if isinstance(candidate, str):
+            clean = candidate.strip()
+            if clean.startswith("http") and clean not in urls:
+                urls.append(clean)
+
+    _add(video.get("url"))
     stream = ((video.get("media") or {}).get("stream")) or {}
-    for codec in ("h264", "h265", "av1", "EF5", "EF4"):
-        for item in stream.get(codec) or []:
-            if not isinstance(item, dict):
-                continue
-            for key in ("masterUrl", "backupUrls"):
-                value = item.get(key)
-                if isinstance(value, str) and value.startswith("http"):
-                    return value
-                if isinstance(value, list):
-                    for u in value:
-                        if isinstance(u, str) and u.startswith("http"):
-                            return u
-    return ""
+    if isinstance(stream, dict):
+        for codec in ("h264", "h265", "av1", "EF5", "EF4"):
+            for item in stream.get(codec) or []:
+                if not isinstance(item, dict):
+                    continue
+                _add(item.get("masterUrl"))
+                backups = item.get("backupUrls")
+                if isinstance(backups, list):
+                    for u in backups:
+                        _add(u)
+                else:
+                    _add(backups)
+
+    consumer = video.get("consumer") or {}
+    if isinstance(consumer, dict):
+        origin_key = consumer.get("originVideoKey")
+        if isinstance(origin_key, str) and origin_key.strip():
+            _add(f"https://sns-video-bd.xhscdn.com/{origin_key.strip().lstrip('/')}")
+
+    return urls
+
+
+def _pick_video_url(note: Dict[str, Any]) -> str:
+    urls = _pick_video_urls(note)
+    return urls[0] if urls else ""
 
 
 def extract_note_info(note_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -252,9 +282,11 @@ def extract_note_info(note_data: Dict[str, Any]) -> Dict[str, Any]:
             if name:
                 tags.append(name)
 
-    video_info = {"url": "", "cover": ""}
+    video_info: Dict[str, Any] = {"url": "", "urls": [], "cover": ""}
     if note_type == "video":
-        video_info["url"] = _pick_video_url(note_data)
+        video_urls = _pick_video_urls(note_data)
+        video_info["urls"] = video_urls
+        video_info["url"] = video_urls[0] if video_urls else ""
         video_node = note_data.get("video") or {}
         video_info["cover"] = _pick_image_url(video_node.get("image") or {}) or _pick_str(
             (video_node.get("consumer") or {}), "coverUrl"
@@ -448,6 +480,69 @@ def is_noise_desc(desc: str) -> bool:
     return len(text) < 4
 
 
+def _collect_video_candidates(note_data: Dict[str, Any]) -> List[str]:
+    """合并 video.urls 与 video.url（兼容旧缓存结构），去重保序"""
+    video = note_data.get("video") or {}
+    if not isinstance(video, dict):
+        return []
+    candidates: List[str] = []
+    for u in [*(video.get("urls") or []), video.get("url") or ""]:
+        if isinstance(u, str):
+            clean = u.strip()
+            if clean.startswith("http") and clean not in candidates:
+                candidates.append(clean)
+    return candidates
+
+
+async def _download_first_video(urls: List[str]) -> str:
+    """按候选列表顺序尝试下载视频，命中有效视频即返回"""
+    for url in urls:
+        saved = await download_video(url)
+        if saved:
+            return saved
+    return ""
+
+
+async def _fetch_note_data(
+    msg_url: str,
+    xhs_id: str,
+    headers: Dict[str, str],
+) -> Tuple[Optional[Dict[str, Any]], str]:
+    """请求小红书页面并提取/缓存笔记数据，返回 `(note_data, error_msg)`"""
+    parsed_url = urlparse(msg_url)
+    params = parse_qs(parsed_url.query)
+    xsec_source = params.get("xsec_source", ["pc_feed"])[0]
+    xsec_token = params.get("xsec_token", [None])[0]
+
+    # 请求小红书内容（必须跟随跳转：小红书经常 302 到规范化地址，
+    # 不跟随的话拿到的只是一个空跳转页，__INITIAL_STATE__ 自然找不到）
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=25) as client:
+            response = await client.get(
+                f"{XHS_REQ_LINK}{xhs_id}?xsec_source={xsec_source}&xsec_token={xsec_token}",
+                headers=headers,
+            )
+            html = response.text
+    except Exception as e:
+        return None, f"请求小红书内容失败: {str(e)}"
+
+    # 解析页面里的 __INITIAL_STATE__（注意：它不是严格 JSON）
+    state = parse_xhs_initial_state(html)
+    if not state:
+        return None, "无法解析小红书内容，Cookie 可能已失效或页面改版了"
+
+    raw_note_data = pick_note_from_state(state, xhs_id)
+    if not raw_note_data:
+        return None, "小红书页面里没有找到笔记数据（可能需要登录 Cookie，或该笔记仅 App 可见）"
+
+    try:
+        note_data = extract_note_info(raw_note_data)
+        save_to_cache(xhs_id, note_data)
+        return note_data, ""
+    except Exception as e:
+        return None, f"解析小红书内容失败: {str(e)}"
+
+
 async def process_xiaohongshu_url(
     event: AstrMessageEvent,
     xhs_ck: str,
@@ -485,7 +580,7 @@ async def process_xiaohongshu_url(
         "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
         "accept-language": "zh-CN,zh;q=0.9",
         "cookie": xhs_ck,
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "User-Agent": COMMON_HEADER["User-Agent"],
     }
 
     # 如果是短链接，获取完整链接
@@ -521,52 +616,15 @@ async def process_xiaohongshu_url(
 
     # 首先尝试从缓存获取数据
     cached_data = get_from_cache(xhs_id)
-    note_data = None
+    used_cache = bool(cached_data)
+    note_data = cached_data
 
     if cached_data:
         logger.info(f"使用缓存的小红书数据: {xhs_id}")
-        note_data = cached_data
     else:
-        # 解析URL参数
-        parsed_url = urlparse(msg_url)
-        params = parse_qs(parsed_url.query)
-
-        # 提取参数
-        xsec_source = params.get("xsec_source", ["pc_feed"])[0]
-        xsec_token = params.get("xsec_token", [None])[0]
-
-        # 请求小红书内容（必须跟随跳转：小红书经常 302 到规范化地址，
-        # 不跟随的话拿到的只是一个空跳转页，__INITIAL_STATE__ 自然找不到）
-        try:
-            async with httpx.AsyncClient(follow_redirects=True, timeout=25) as client:
-                response = await client.get(
-                    f"{XHS_REQ_LINK}{xhs_id}?xsec_source={xsec_source}&xsec_token={xsec_token}",
-                    headers=headers,
-                )
-                html = response.text
-        except Exception as e:
-            yield event.plain_result(f"请求小红书内容失败: {str(e)}")
-            return
-
-        # 解析页面里的 __INITIAL_STATE__（注意：它不是严格 JSON）
-        state = parse_xhs_initial_state(html)
-        if not state:
-            yield event.plain_result("无法解析小红书内容，Cookie 可能已失效或页面改版了")
-            return
-
-        raw_note_data = pick_note_from_state(state, xhs_id)
-        if not raw_note_data:
-            yield event.plain_result(
-                "小红书页面里没有找到笔记数据（可能需要登录 Cookie，或该笔记仅 App 可见）"
-            )
-            return
-
-        try:
-            # 提取并缓存数据
-            note_data = extract_note_info(raw_note_data)
-            save_to_cache(xhs_id, note_data)
-        except Exception as e:
-            yield event.plain_result(f"解析小红书内容失败: {str(e)}")
+        note_data, fetch_err = await _fetch_note_data(msg_url, xhs_id, headers)
+        if not note_data:
+            yield event.plain_result(fetch_err or "无法获取小红书内容")
             return
 
     if not note_data:
@@ -625,11 +683,20 @@ async def process_xiaohongshu_url(
 
     # 根据内容类型处理
     if content_type == "video":
-        video_url = (note_data.get("video") or {}).get("url", "")
-        if not video_url:
+        video_candidates = _collect_video_candidates(note_data)
+        if not video_candidates and not used_cache:
             yield event.plain_result("无法获取小红书视频直链")
             return
-        video_path = await download_video(video_url)
+        video_path = await _download_first_video(video_candidates)
+        if not video_path and used_cache:
+            logger.info(f"[R插件][小红书] 缓存视频直链下载失败，重新抓取刷新直链: {xhs_id}")
+            refreshed, _ = await _fetch_note_data(msg_url, xhs_id, headers)
+            if refreshed:
+                video_candidates = _collect_video_candidates(refreshed)
+                video_path = await _download_first_video(video_candidates)
+        if not video_candidates:
+            yield event.plain_result("无法获取小红书视频直链")
+            return
         if not video_path:
             yield event.plain_result("小红书视频下载失败")
             return
@@ -652,19 +719,14 @@ async def process_xiaohongshu_url(
         return
 
     os.makedirs(_cache_dir(), exist_ok=True)
-    image_paths = []
-    async with aiohttp.ClientSession() as session:
-        download_tasks = []
-        for index, item in enumerate(image_list):
-            image_url = item.get("url", "")
-            if not image_url:
-                continue
-            path = os.path.join(_cache_dir(), f"xhs_{xhs_id}_{index}.jpg")
-            download_tasks.append(
-                asyncio.create_task(download_img(image_url, path, session=session))
-            )
-        if download_tasks:
-            image_paths = [p for p in await asyncio.gather(*download_tasks) if p]
+    download_tasks = []
+    for index, item in enumerate(image_list):
+        image_url = item.get("url", "")
+        if not image_url:
+            continue
+        path = os.path.join(_cache_dir(), f"xhs_{xhs_id}_{index}.jpg")
+        download_tasks.append(asyncio.create_task(download_img(image_url, path)))
+    image_paths = [p for p in await asyncio.gather(*download_tasks) if p] if download_tasks else []
 
     if not image_paths:
         yield event.plain_result("图片下载失败")

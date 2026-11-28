@@ -6,7 +6,7 @@
 2. 使用 ffmpeg 将音频转为 16kHz 单声道 16-bit PCM WAV 并按单次上传字节上限切片
    （默认 8MB 预留 64KiB multipart 头，避免 Groq whisper-large-v3-turbo 502，
    也避免 AstrBot MediaResolver 将 MP3 二次转成超大 WAV）。
-3. 逐片调用 `stt_provider.get_text(chunk_wav)` 拼接完整转写文本（带重试与部分失败容错）。
+3. 并发分片调用 `stt_provider.get_text(chunk_wav)`（默认 4 并发）并按原分片顺序拼接完整转写文本（带重试、429 退避与部分失败容错）。
 4. 超过单次上下文长度时走 Map-Reduce 分段整理与汇总，最终按平台安全发送（OneBot 合并转发 / Telegram & QQ 官方纯文本分段）。
 """
 
@@ -34,6 +34,8 @@ from ..constants.xiaoyuzhou import (
     DEFAULT_AI_SUMMARY_TRANSCRIPT_CAP,
     DEFAULT_PODCAST_SUMMARY_PROMPT,
     DEFAULT_STT_CHUNK_MB,
+    DEFAULT_STT_CONCURRENCY,
+    MAX_STT_CONCURRENCY,
     PLAIN_TEXT_CHUNK_LIMIT,
     STT_CHANNELS,
     STT_MULTIPART_RESERVE_BYTES,
@@ -309,62 +311,106 @@ async def transcribe_audio_chunks(
     stt_provider: Any,
     chunks: Sequence[Tuple[str, float]],
     *,
+    concurrency: int = DEFAULT_STT_CONCURRENCY,
+    provider_type: str = "",
     per_chunk_timeout: float = 180.0,
     retries: int = 2,
 ) -> Tuple[str, int, int]:
     """
-    逐片调用 AstrBot STTProvider.get_text() 并拼接转写文本。
+    并发调用 AstrBot STTProvider.get_text() 并按原分片顺序拼接转写文本。
 
     返回 `(transcript, ok_count, fail_count)`；部分分片失败时保留成功分片继续，
     全部失败则抛出最后一轮异常原因。
     """
-    texts: List[str] = []
-    ok_count = 0
-    fail_count = 0
+    total = len(chunks)
+    if total == 0:
+        raise RuntimeError("音频切片结果为空")
+
+    req = int(concurrency or DEFAULT_STT_CONCURRENCY)
+    req = max(1, min(req, MAX_STT_CONCURRENCY))
+    if "selfhost" in (provider_type or "").lower():
+        workers = 1
+        if req > 1:
+            logger.info(
+                "[R插件][小宇宙AI总结] 本地部署 Whisper 模型不支持并发推理，已自动降级为串行转写"
+            )
+    else:
+        workers = min(req, total)
+
+    logger.info(f"[R插件][小宇宙AI总结] 开始转写：共 {total} 片，并发数 {workers}")
+
+    sem = asyncio.Semaphore(workers)
+    stop_event = asyncio.Event()
+    ordered_texts: List[Optional[str]] = [None] * total
+    statuses: List[str] = ["skipped"] * total
     total_chars = 0
     last_error = ""
-    total = len(chunks)
+    cap_logged = False
 
-    for idx, (chunk_path, secs) in enumerate(chunks, 1):
-        size_mb = os.path.getsize(chunk_path) / 1024 / 1024 if os.path.exists(chunk_path) else 0.0
-        logger.info(f"[R插件][小宇宙AI总结] 转写分片 {idx}/{total}（{secs:.1f}s, {size_mb:.2f}MB）")
-        chunk_text = ""
-        succeeded = False
-        for attempt in range(retries + 1):
-            try:
-                raw = await asyncio.wait_for(
-                    stt_provider.get_text(chunk_path),
-                    timeout=per_chunk_timeout,
-                )
-                chunk_text = (raw or "").strip()
-                succeeded = True
-                break
-            except Exception as exc:  # noqa: BLE001
-                last_error = f"{type(exc).__name__}: {exc}"
-                logger.warning(
-                    f"[R插件][小宇宙AI总结] 分片 {idx}/{total} 第 {attempt + 1} 次转写失败：{last_error}"
-                )
-                if attempt < retries:
-                    await asyncio.sleep(2.0 * (attempt + 1))
+    async def _transcribe_one(index: int, chunk_path: str, secs: float) -> None:
+        nonlocal total_chars, last_error, cap_logged
+        if stop_event.is_set():
+            return
+        idx = index + 1
+        async with sem:
+            if stop_event.is_set():
+                return
+            size_mb = (
+                os.path.getsize(chunk_path) / 1024 / 1024 if os.path.exists(chunk_path) else 0.0
+            )
+            logger.info(
+                f"[R插件][小宇宙AI总结] 转写分片 {idx}/{total}（{secs:.1f}s, {size_mb:.2f}MB）"
+            )
+            chunk_text = ""
+            succeeded = False
+            for attempt in range(retries + 1):
+                try:
+                    raw = await asyncio.wait_for(
+                        stt_provider.get_text(chunk_path),
+                        timeout=per_chunk_timeout,
+                    )
+                    chunk_text = (raw or "").strip()
+                    succeeded = True
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    last_error = f"{type(exc).__name__}: {exc}"
+                    logger.warning(
+                        f"[R插件][小宇宙AI总结] 分片 {idx}/{total} 第 {attempt + 1} 次转写失败：{last_error}"
+                    )
+                    if attempt < retries:
+                        low = last_error.lower()
+                        is_rate_limit = (
+                            "429" in low or "rate limit" in low or "too many requests" in low
+                        )
+                        delay = (4.0 if is_rate_limit else 2.0) * (attempt + 1)
+                        await asyncio.sleep(delay)
 
-        if not succeeded:
-            fail_count += 1
-            continue
+            if not succeeded:
+                statuses[index] = "fail"
+                return
 
-        ok_count += 1
-        if chunk_text:
-            texts.append(chunk_text)
-            total_chars += len(chunk_text)
-            if total_chars >= DEFAULT_AI_SUMMARY_TRANSCRIPT_CAP:
-                logger.warning(
-                    f"[R插件][小宇宙AI总结] 转写文本达到上限 {DEFAULT_AI_SUMMARY_TRANSCRIPT_CAP} 字，停止后续分片"
-                )
-                break
+            statuses[index] = "ok"
+            ordered_texts[index] = chunk_text
+            logger.info(
+                f"[R插件][小宇宙AI总结] 分片 {idx}/{total} 转写完成（{len(chunk_text)} 字）"
+            )
+            if chunk_text:
+                total_chars += len(chunk_text)
+                if total_chars >= DEFAULT_AI_SUMMARY_TRANSCRIPT_CAP and not cap_logged:
+                    cap_logged = True
+                    stop_event.set()
+                    logger.warning(
+                        f"[R插件][小宇宙AI总结] 转写文本达到上限 {DEFAULT_AI_SUMMARY_TRANSCRIPT_CAP} 字，停止后续分片"
+                    )
 
+    await asyncio.gather(*(_transcribe_one(i, path, secs) for i, (path, secs) in enumerate(chunks)))
+
+    ok_count = sum(1 for s in statuses if s == "ok")
+    fail_count = sum(1 for s in statuses if s == "fail")
     if ok_count == 0:
         raise RuntimeError(f"所有 {total} 个音频分片均转写失败（{last_error or '未知错误'}）")
 
-    merged = "\n".join(texts).strip()
+    merged = "\n".join(t for t in ordered_texts if t).strip()
     if not merged:
         raise RuntimeError("语音转文字未识别出有效内容（可能为纯音乐或静音音频）")
     return merged, ok_count, fail_count
@@ -533,6 +579,7 @@ async def process_xiaoyuzhou_summary(
     stt_provider_id: str = "",
     chat_provider_id: str = "",
     chunk_mb: float = DEFAULT_STT_CHUNK_MB,
+    stt_concurrency: int = DEFAULT_STT_CONCURRENCY,
     max_duration: int = DEFAULT_AI_SUMMARY_MAX_DURATION,
     use_forward: bool = True,
     system_prompt: str = "",
@@ -582,6 +629,8 @@ async def process_xiaoyuzhou_summary(
                 transcript, ok_chunks, fail_chunks = await transcribe_audio_chunks(
                     stt_provider,
                     chunks,
+                    concurrency=stt_concurrency,
+                    provider_type=stt_type,
                 )
     except Exception as exc:  # noqa: BLE001
         logger.warning(f"[R插件][小宇宙AI总结] 切片/转写失败：{exc}")
